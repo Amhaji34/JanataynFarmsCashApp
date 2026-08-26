@@ -201,17 +201,21 @@ has a "This is a repayment" toggle. Off, it saves as `loan` (money going
 out); on, it saves as `loan_repayment` (money coming in) — same partner
 dropdown either way, just flips the saved `type` and cash direction.
 
-**Recording payroll with an advance deduction:** when type = `payroll`
-and a staff member is selected, the form shows their base salary and
-currently owed advance balance (both read-only, fetched from
-`transactions`), plus an editable "Repay amount" field. The total amount
-field becomes read-only and auto-computes as
-`base_salary - repay_amount` — that's what's actually paid out. Saving
-inserts the `payroll` transaction for that net amount, and if repay
-amount > 0, also inserts a separate `advance_deduction` transaction
-(same date, `related_staff_id` set) for the repay amount — mirroring the
-"Advance handling detail" above. Repay amount is validated against both
-the owed balance and the base salary before saving.
+**Recording payroll with an advance deduction:** payroll is **not** a
+type in the Add Transaction screen (see `payroll_screen.dart` in the file
+structure below) — it's a dedicated batch screen, since paying staff
+happens for a whole team at once, not one person at a time like an
+expense or a loan. For each staff member the screen shows their base
+salary and currently owed advance balance (both read-only, fetched from
+`transactions`), plus an editable "Repay amount" field; the net to
+receive auto-computes as `base_salary - repay_amount`. Saving loops over
+every *included* staff member (a per-row toggle lets you skip someone
+that cycle) and, for each one, inserts the `payroll` transaction for
+their net amount, plus — if repay amount > 0 — a separate
+`advance_deduction` transaction (same shared run date, `related_staff_id`
+set) for the repay amount, mirroring the "Advance handling detail"
+above. Repay amount is validated per-staff against both their owed
+balance and their base salary before saving.
 
 ## Funding accounts
 
@@ -335,9 +339,10 @@ lib/
 │                                     the dashboard's hamburger icon.
 │                                     Always shows Transactions + Reports
 │                                     + Log out (read-only, so viewers see
-│                                     them too); shows a "MANAGE" section
-│                                     (Expense categories, Staff,
-│                                     Partners, Settings) for admins only.
+│                                     them too); shows "Run Payroll" plus a
+│                                     "MANAGE" section (Expense categories,
+│                                     Staff, Partners, Settings) for
+│                                     admins only.
 ├── screens/
 │   ├── auth_gate.dart             — the actual `home` widget. Renders
 │   │                                 DashboardScreen if a session is
@@ -353,22 +358,28 @@ lib/
 │   │                                 this-month totals. FAB to add a
 │   │                                 transaction (admin only); drawer for
 │   │                                 navigation to everything else.
-│   ├── add_transaction_screen.dart — type selector (expense/payroll/loan/
-│   │                                 advance), partner/staff dropdown
-│   │                                 when relevant, category dropdown
-│   │                                 (expense only, sourced from
-│   │                                 expense_categories), total amount,
-│   │                                 "Multiple invoices" toggle with
-│   │                                 per-invoice category dropdowns and
-│   │                                 allocation validation, note field.
-│   │                                 Loan type has a repayment toggle;
-│   │                                 payroll type shows a base
-│   │                                 salary/owed-advance breakdown with a
-│   │                                 repay-amount field (see "Recording
-│   │                                 payroll with an advance deduction"
-│   │                                 above). Also used for editing
-│   │                                 multi-invoice transactions
+│   ├── add_transaction_screen.dart — type selector (expense/loan/advance
+│   │                                 — no payroll, see payroll_screen.dart),
+│   │                                 partner/staff dropdown when relevant,
+│   │                                 category dropdown (expense only,
+│   │                                 sourced from expense_categories),
+│   │                                 total amount, "Multiple invoices"
+│   │                                 toggle with per-invoice category
+│   │                                 dropdowns and allocation validation,
+│   │                                 note field. Loan type has a
+│   │                                 repayment toggle. Also used for
+│   │                                 editing multi-invoice transactions
 │   │                                 (pre-filled).
+│   ├── payroll_screen.dart        — batch payroll: pays some or all
+│   │                                 staff in one run instead of one
+│   │                                 transaction at a time. One shared
+│   │                                 date for the run; per staff member,
+│   │                                 an include toggle plus the same
+│   │                                 base salary/owed-advance/repay-amount
+│   │                                 breakdown the old payroll type had
+│   │                                 (see "Recording payroll with an
+│   │                                 advance deduction" above). Reached
+│   │                                 from the drawer, admin only.
 │   ├── expense_categories_screen.dart — list of expense categories with
 │   │                                 an add-new form; reached via the
 │   │                                 "Manage categories" link on the Add

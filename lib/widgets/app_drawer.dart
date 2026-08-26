@@ -3,6 +3,7 @@ import '../main.dart';
 import '../screens/login_screen.dart';
 import '../screens/transaction_log_screen.dart';
 import '../screens/report_screen.dart';
+import '../screens/payroll_screen.dart';
 import '../screens/expense_categories_screen.dart';
 import '../screens/staff_screen.dart';
 import '../screens/partners_screen.dart';
@@ -139,6 +140,13 @@ class AppDrawer extends StatelessWidget {
                   destination: const ReportScreen(),
                 ),
                 if (isAdmin) ...[
+                  _navTile(
+                    context: context,
+                    icon: Icons.payments_outlined,
+                    label: 'Run Payroll',
+                    color: AppColors.payroll,
+                    destination: const PayrollScreen(),
+                  ),
                   const Padding(
                     padding: EdgeInsets.fromLTRB(20, 18, 20, 8),
                     child: SectionLabel('MANAGE'),

@@ -32,7 +32,7 @@ class _LineItem {
 }
 
 class _AddTransactionScreenState extends State<AddTransactionScreen> {
-  static const _types = ['expense', 'payroll', 'loan', 'advance'];
+  static const _types = ['expense', 'loan', 'advance'];
 
   static const _allocatedOk = AppColors.cashIn;
 
@@ -57,29 +57,19 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
 
   bool _isRepayment = false;
 
-  double _staffBaseSalary = 0;
-  double _staffOwed = 0;
-  bool _loadingStaffFinancials = false;
-  final _repayAmountController = TextEditingController(text: '0.00');
-  final _currency = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
-
   bool _saving = false;
   String? _errorMessage;
 
   bool get _isEditing => widget.existingTransaction != null;
 
   bool get _needsPartner => _selectedType == 'loan';
-  bool get _needsStaff => _selectedType == 'payroll' || _selectedType == 'advance';
+  bool get _needsStaff => _selectedType == 'advance';
   bool get _supportsSplit => _selectedType == 'expense';
 
   /// The type actually saved to the database - 'loan' flips to
   /// 'loan_repayment' when the repayment toggle is on.
   String get _effectiveType =>
       (_selectedType == 'loan' && _isRepayment) ? 'loan_repayment' : _selectedType;
-
-  double get _repayAmount => double.tryParse(_repayAmountController.text) ?? 0;
-  double get _payrollNetAmount =>
-      (_staffBaseSalary - _repayAmount).clamp(0, double.infinity);
 
   double get _totalAmount => double.tryParse(_totalController.text) ?? 0;
   double get _allocatedAmount =>
@@ -126,7 +116,6 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   void dispose() {
     _totalController.dispose();
     _noteController.dispose();
-    _repayAmountController.dispose();
     for (final item in _items) {
       item.amountController.dispose();
     }
@@ -140,45 +129,6 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       _partners = List<Map<String, dynamic>>.from(partners);
       _staff = List<Map<String, dynamic>>.from(staff);
     });
-  }
-
-  Future<void> _loadStaffFinancials(String staffId) async {
-    setState(() => _loadingStaffFinancials = true);
-
-    final staff = _staff.firstWhere((s) => s['id'] == staffId);
-    final baseSalary = (staff['base_salary'] as num).toDouble();
-
-    final advances = await supabase
-        .from('transactions')
-        .select('amount')
-        .eq('type', 'advance')
-        .eq('related_staff_id', staffId);
-    final deductions = await supabase
-        .from('transactions')
-        .select('amount')
-        .eq('type', 'advance_deduction')
-        .eq('related_staff_id', staffId);
-
-    double advanceTotal = 0;
-    for (final a in advances) {
-      advanceTotal += (a['amount'] as num).toDouble();
-    }
-    double deductionTotal = 0;
-    for (final d in deductions) {
-      deductionTotal += (d['amount'] as num).toDouble();
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _staffBaseSalary = baseSalary;
-      _staffOwed = advanceTotal - deductionTotal;
-      _loadingStaffFinancials = false;
-      _syncPayrollAmount();
-    });
-  }
-
-  void _syncPayrollAmount() {
-    _totalController.text = _payrollNetAmount.toStringAsFixed(2);
   }
 
   Future<void> _loadCategories() async {
@@ -237,8 +187,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   Future<void> _save() async {
     setState(() => _errorMessage = null);
 
-    final isPayroll = _selectedType == 'payroll';
-    if (isPayroll ? _totalAmount < 0 : _totalAmount <= 0) {
+    if (_totalAmount <= 0) {
       setState(() => _errorMessage = 'Enter a total amount greater than zero.');
       return;
     }
@@ -260,15 +209,6 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     }
     if (_splitEnabled && _items.any((item) => item.categoryId == null)) {
       setState(() => _errorMessage = 'Select a category for every invoice.');
-      return;
-    }
-    if (isPayroll && _repayAmount > _staffOwed + 0.01) {
-      setState(() => _errorMessage =
-          'Repay amount can\'t exceed the amount owed (${_currency.format(_staffOwed)}).');
-      return;
-    }
-    if (isPayroll && _repayAmount > _staffBaseSalary + 0.01) {
-      setState(() => _errorMessage = 'Repay amount can\'t exceed the base salary.');
       return;
     }
 
@@ -302,22 +242,6 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               ? _categoryName(_selectedCategoryId)
               : _effectiveType,
           'amount': _totalAmount,
-        });
-      }
-
-      if (isPayroll && _repayAmount > 0) {
-        final deductionResponse = await supabase.from('transactions').insert({
-          'type': 'advance_deduction',
-          'amount': _repayAmount,
-          'transaction_date': _dbDateFormat.format(_selectedDate),
-          'related_staff_id': _selectedStaffId,
-          'note': 'Advance deduction for payroll',
-        }).select().single();
-
-        await supabase.from('transaction_items').insert({
-          'transaction_id': deductionResponse['id'],
-          'category': 'advance_deduction',
-          'amount': _repayAmount,
         });
       }
 
@@ -358,8 +282,6 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     switch (type) {
       case 'expense':
         return Icons.receipt_long_outlined;
-      case 'payroll':
-        return Icons.payments_outlined;
       case 'loan':
         return Icons.pan_tool_outlined;
       case 'advance':
@@ -455,18 +377,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                         child: Text(s['name'] as String),
                       ))
                   .toList(),
-              onChanged: (value) {
-                setState(() => _selectedStaffId = value);
-                if (value != null && _selectedType == 'payroll') {
-                  _loadStaffFinancials(value);
-                }
-              },
+              onChanged: (value) => setState(() => _selectedStaffId = value),
             ),
-            const SizedBox(height: 20),
-          ],
-
-          if (_selectedType == 'payroll' && _selectedStaffId != null) ...[
-            _payrollBreakdown(),
             const SizedBox(height: 20),
           ],
 
@@ -493,13 +405,10 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             const SizedBox(height: 20),
           ],
 
-          _sectionLabel(
-            _selectedType == 'payroll' ? 'Amount he will receive' : 'Total amount',
-          ),
+          _sectionLabel('Total amount'),
           const SizedBox(height: 6),
           TextField(
             controller: _totalController,
-            enabled: _selectedType != 'payroll',
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
             decoration: _fieldDecoration(hint: '\$0.00', large: true).copyWith(
@@ -685,23 +594,12 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   }
 
   Widget _typeGrid() {
-    return Column(
+    return Row(
       children: [
-        Row(
-          children: [
-            Expanded(child: _typeButton(_types[0])),
-            const SizedBox(width: 10),
-            Expanded(child: _typeButton(_types[1])),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(child: _typeButton(_types[2])),
-            const SizedBox(width: 10),
-            Expanded(child: _typeButton(_types[3])),
-          ],
-        ),
+        for (var i = 0; i < _types.length; i++) ...[
+          if (i > 0) const SizedBox(width: 10),
+          Expanded(child: _typeButton(_types[i])),
+        ],
       ],
     );
   }
@@ -715,16 +613,11 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       color: selected ? color.withValues(alpha: 0.10) : AppColors.surface,
       borderRadius: BorderRadius.circular(AppStyles.radiusField),
       child: InkWell(
-        onTap: () {
-          setState(() {
-            _selectedType = type;
-            if (!_supportsSplit) _splitEnabled = false;
-            if (type != 'loan') _isRepayment = false;
-          });
-          if (type == 'payroll' && _selectedStaffId != null) {
-            _loadStaffFinancials(_selectedStaffId!);
-          }
-        },
+        onTap: () => setState(() {
+          _selectedType = type;
+          if (!_supportsSplit) _splitEnabled = false;
+          if (type != 'loan') _isRepayment = false;
+        }),
         borderRadius: BorderRadius.circular(AppStyles.radiusField),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
@@ -853,124 +746,6 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       color: AppColors.cashIn,
       value: _isRepayment,
       onChanged: (value) => setState(() => _isRepayment = value),
-    );
-  }
-
-  Widget _payrollInfoField(String label, String value, Color color) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.07),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.18)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w600,
-                color: AppColors.inkSecondary,
-              ),
-            ),
-            const SizedBox(height: 5),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.3,
-                color: color,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _payrollBreakdown() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            _payrollInfoField(
-              'Base salary',
-              _loadingStaffFinancials
-                  ? '…'
-                  : _currency.format(_staffBaseSalary),
-              AppColors.payroll,
-            ),
-            const SizedBox(width: 10),
-            _payrollInfoField(
-              'Owed (advance)',
-              _loadingStaffFinancials ? '…' : _currency.format(_staffOwed),
-              AppColors.advance,
-            ),
-          ],
-        ),
-        const SizedBox(height: 18),
-        _sectionLabel('Repay amount (deduct from this salary)'),
-        const SizedBox(height: 6),
-        TextField(
-          controller: _repayAmountController,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: _fieldDecoration(
-            hint: '\$0.00',
-          ).copyWith(prefixText: '\$ '),
-          onChanged: (_) => setState(_syncPayrollAmount),
-        ),
-        const SizedBox(height: 16),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                AppColors.brandGreenLight.withValues(alpha: 0.13),
-                AppColors.brandGreen.withValues(alpha: 0.07),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(AppStyles.radiusField),
-            border: Border.all(
-              color: AppColors.brandGreen.withValues(alpha: 0.22),
-            ),
-          ),
-          child: Row(
-            children: [
-              const Icon(
-                Icons.account_balance_wallet_outlined,
-                size: 18,
-                color: AppColors.brandGreen,
-              ),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Text(
-                  'He will receive',
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.brandGreenDeep,
-                  ),
-                ),
-              ),
-              Text(
-                _currency.format(_payrollNetAmount),
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.4,
-                  color: AppColors.brandGreenDeep,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 

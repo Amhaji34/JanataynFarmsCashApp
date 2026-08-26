@@ -10,6 +10,7 @@ enum _EntryKind { fundAdd, transfer, other }
 class _Entry {
   _Entry({
     required this.date,
+    required this.createdAt,
     required this.label,
     required this.amount,
     required this.isPositive,
@@ -19,12 +20,18 @@ class _Entry {
   });
 
   final DateTime date;
+  final DateTime createdAt;
   final String label;
   final double amount;
   final bool isPositive;
   final Color color;
   final IconData icon;
   final _EntryKind kind;
+
+  /// Running account balance immediately after this entry, computed once
+  /// entries are known in chronological order. Not part of the constructor
+  /// since it depends on every other entry, not just this one.
+  double balanceAfter = 0;
 }
 
 /// Ledger/history for a single account. Petty Cash's history also folds in
@@ -90,6 +97,13 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
       .where((e) => e.kind == _EntryKind.fundAdd)
       .fold(0, (sum, e) => sum + e.amount);
 
+  /// Petty Cash never has fund_add rows, so "Total added" is meaningless
+  /// there - this sums the actual outflows (expense/payroll/loan/advance)
+  /// instead.
+  double get _totalSpent => _filteredEntries
+      .where((e) => e.kind == _EntryKind.other && !e.isPositive)
+      .fold(0, (sum, e) => sum + e.amount);
+
   double get _totalTransferred => _filteredEntries
       .where((e) => e.kind == _EntryKind.transfer)
       .fold(0, (sum, e) => sum + e.amount);
@@ -122,20 +136,20 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
       final ledger = List<Map<String, dynamic>>.from(ledgerData);
 
       final entries = <_Entry>[];
-      double balance = 0;
 
       for (final t in ledger) {
         final amount = (t['amount'] as num).toDouble();
         final date = DateTime.parse(t['transaction_date'] as String);
+        final createdAt = DateTime.parse(t['created_at'] as String);
         final type = t['type'] as String;
         final relatedName = accountNameById[t['related_account_id']];
 
         switch (type) {
           case 'fund_add':
-            balance += amount;
             entries.add(
               _Entry(
                 date: date,
+                createdAt: createdAt,
                 label: 'Funds added',
                 amount: amount,
                 isPositive: true,
@@ -146,10 +160,10 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
             );
             break;
           case 'transfer_out':
-            balance -= amount;
             entries.add(
               _Entry(
                 date: date,
+                createdAt: createdAt,
                 label: 'Transferred to ${relatedName ?? 'Petty Cash'}',
                 amount: amount,
                 isPositive: false,
@@ -160,10 +174,10 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
             );
             break;
           case 'transfer_in':
-            balance += amount;
             entries.add(
               _Entry(
                 date: date,
+                createdAt: createdAt,
                 label: 'Transfer from ${relatedName ?? 'another account'}',
                 amount: amount,
                 isPositive: true,
@@ -176,26 +190,28 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
         }
       }
 
+      double openingBalance = 0;
       if (_isPettyCash) {
         final settingsRow = await supabase
             .from('settings')
             .select()
             .eq('key', 'opening_balance')
             .single();
-        balance += (settingsRow['value'] as num).toDouble();
+        openingBalance = (settingsRow['value'] as num).toDouble();
 
         final txnsData = await supabase.from('transactions').select();
         for (final t in List<Map<String, dynamic>>.from(txnsData)) {
           final amount = (t['amount'] as num).toDouble();
           final date = DateTime.parse(t['transaction_date'] as String);
+          final createdAt = DateTime.parse(t['created_at'] as String);
           final type = t['type'] as String;
 
           switch (type) {
             case 'expense':
-              balance -= amount;
               entries.add(
                 _Entry(
                   date: date,
+                  createdAt: createdAt,
                   label: 'Expense',
                   amount: amount,
                   isPositive: false,
@@ -206,10 +222,10 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
               );
               break;
             case 'payroll':
-              balance -= amount;
               entries.add(
                 _Entry(
                   date: date,
+                  createdAt: createdAt,
                   label: 'Payroll',
                   amount: amount,
                   isPositive: false,
@@ -220,10 +236,10 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
               );
               break;
             case 'loan':
-              balance -= amount;
               entries.add(
                 _Entry(
                   date: date,
+                  createdAt: createdAt,
                   label: 'Loan given',
                   amount: amount,
                   isPositive: false,
@@ -234,10 +250,10 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
               );
               break;
             case 'advance':
-              balance -= amount;
               entries.add(
                 _Entry(
                   date: date,
+                  createdAt: createdAt,
                   label: 'Advance given',
                   amount: amount,
                   isPositive: false,
@@ -248,10 +264,10 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
               );
               break;
             case 'loan_repayment':
-              balance += amount;
               entries.add(
                 _Entry(
                   date: date,
+                  createdAt: createdAt,
                   label: 'Loan repayment received',
                   amount: amount,
                   isPositive: true,
@@ -266,11 +282,24 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
         }
       }
 
-      entries.sort((a, b) => b.date.compareTo(a.date));
+      // Chronological (oldest first) so the running balance is meaningful,
+      // then tag each entry with the balance immediately after it.
+      entries.sort((a, b) {
+        final byDate = a.date.compareTo(b.date);
+        return byDate != 0 ? byDate : a.createdAt.compareTo(b.createdAt);
+      });
+
+      double running = openingBalance;
+      for (final e in entries) {
+        running += e.isPositive ? e.amount : -e.amount;
+        e.balanceAfter = running;
+      }
+
+      final displayEntries = entries.reversed.toList();
 
       setState(() {
-        _balance = balance;
-        _entries = entries;
+        _balance = running;
+        _entries = displayEntries;
         _loading = false;
       });
     } catch (e) {
@@ -388,12 +417,19 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                   Row(
                     children: [
                       Expanded(
-                        child: StatTile(
-                          icon: Icons.add,
-                          label: 'Total added',
-                          value: _currency.format(_totalAdded),
-                          color: AppColors.cashIn,
-                        ),
+                        child: _isPettyCash
+                            ? StatTile(
+                                icon: Icons.trending_down,
+                                label: 'Total spent',
+                                value: _currency.format(_totalSpent),
+                                color: AppColors.expense,
+                              )
+                            : StatTile(
+                                icon: Icons.add,
+                                label: 'Total added',
+                                value: _currency.format(_totalAdded),
+                                color: AppColors.cashIn,
+                              ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -457,14 +493,27 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                                   ],
                                 ),
                               ),
-                              Text(
-                                '${e.isPositive ? '+' : '-'}${_currency.format(e.amount)}',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: -0.2,
-                                  color: e.color,
-                                ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    '${e.isPositive ? '+' : '-'}${_currency.format(e.amount)}',
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: -0.2,
+                                      color: e.color,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    'Bal: ${_currency.format(e.balanceAfter)}',
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      color: AppColors.inkMuted,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
