@@ -7,6 +7,8 @@ import '../screens/expense_categories_screen.dart';
 import '../screens/staff_screen.dart';
 import '../screens/partners_screen.dart';
 import '../screens/settings_screen.dart';
+import '../theme/app_theme.dart';
+import 'app_ui.dart';
 
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key, required this.name, required this.role});
@@ -29,88 +31,190 @@ class AppDrawer extends StatelessWidget {
     }
   }
 
+  Widget _navTile({
+    required BuildContext context,
+    required IconData icon,
+    required String label,
+    required Color color,
+    required Widget destination,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _go(context, destination),
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+            child: Row(
+              children: [
+                IconBadge(icon: icon, color: color, size: 34, iconSize: 17),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.ink,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isAdmin = role == 'admin';
 
     return Drawer(
-      backgroundColor: const Color(0xFFF7F7F5),
-      child: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Image.asset('assets/images/logo_main.jpeg', width: 160),
-                  if (name != null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      name!,
-                      style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-                    ),
-                  ],
-                ],
+      backgroundColor: AppColors.canvas,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Brand header
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [AppColors.brandGreenLight, AppColors.brandGreenDeep],
               ),
             ),
-            const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.receipt_long_outlined),
-              title: const Text('Transactions'),
-              onTap: () => _go(context, const TransactionLogScreen()),
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const BrandLogo(width: 168, padding: 9),
+                    if (name != null) ...[
+                      const SizedBox(height: 14),
+                      Text(
+                        name!,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        isAdmin ? 'Administrator' : 'Viewer',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.white.withValues(alpha: 0.75),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
-            ListTile(
-              leading: const Icon(Icons.bar_chart_outlined),
-              title: const Text('Reports'),
-              onTap: () => _go(context, const ReportScreen()),
+          ),
+
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.only(top: 12, bottom: 8),
+              children: [
+                _navTile(
+                  context: context,
+                  icon: Icons.receipt_long_outlined,
+                  label: 'Transactions',
+                  color: AppColors.expense,
+                  destination: const TransactionLogScreen(),
+                ),
+                _navTile(
+                  context: context,
+                  icon: Icons.bar_chart_rounded,
+                  label: 'Reports',
+                  color: AppColors.loan,
+                  destination: const ReportScreen(),
+                ),
+                if (isAdmin) ...[
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(20, 18, 20, 8),
+                    child: SectionLabel('MANAGE'),
+                  ),
+                  _navTile(
+                    context: context,
+                    icon: Icons.category_outlined,
+                    label: 'Expense categories',
+                    color: AppColors.payroll,
+                    destination: const ExpenseCategoriesScreen(),
+                  ),
+                  _navTile(
+                    context: context,
+                    icon: Icons.people_outline,
+                    label: 'Staff',
+                    color: AppColors.advance,
+                    destination: const StaffScreen(),
+                  ),
+                  _navTile(
+                    context: context,
+                    icon: Icons.handshake_outlined,
+                    label: 'Partners',
+                    color: AppColors.brandNavy,
+                    destination: const PartnersScreen(),
+                  ),
+                  _navTile(
+                    context: context,
+                    icon: Icons.settings_outlined,
+                    label: 'Settings',
+                    color: AppColors.neutral,
+                    destination: const SettingsScreen(),
+                  ),
+                ],
+              ],
             ),
-            if (isAdmin) ...[
-              const Divider(height: 1),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                child: Text(
-                  'MANAGE',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
-                    color: Colors.grey.shade500,
+          ),
+
+          const Divider(height: 1),
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => _logout(context),
+                  borderRadius: BorderRadius.circular(12),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 10,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.logout,
+                          size: 19,
+                          color: AppColors.inkSecondary,
+                        ),
+                        SizedBox(width: 14),
+                        Text(
+                          'Log out',
+                          style: TextStyle(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.inkSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-              ListTile(
-                leading: const Icon(Icons.category_outlined),
-                title: const Text('Expense categories'),
-                onTap: () => _go(context, const ExpenseCategoriesScreen()),
-              ),
-              ListTile(
-                leading: const Icon(Icons.people_outline),
-                title: const Text('Staff'),
-                onTap: () => _go(context, const StaffScreen()),
-              ),
-              ListTile(
-                leading: const Icon(Icons.handshake_outlined),
-                title: const Text('Partners'),
-                onTap: () => _go(context, const PartnersScreen()),
-              ),
-              ListTile(
-                leading: const Icon(Icons.settings_outlined),
-                title: const Text('Settings'),
-                onTap: () => _go(context, const SettingsScreen()),
-              ),
-            ],
-            const Spacer(),
-            const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.logout),
-              title: const Text('Log out'),
-              onTap: () => _logout(context),
             ),
-            const SizedBox(height: 8),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

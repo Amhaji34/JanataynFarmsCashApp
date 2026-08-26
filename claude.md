@@ -22,9 +22,13 @@ Three people use this app:
   but have zero write access, enforced at the database level via RLS, not
   just hidden UI buttons.
 
-There is no capital-tracking feature. Initial investments are recorded in
-external documents, not in the app. No new capital injections are tracked
-either — partners' ownership stake is fixed and external to this system.
+Partners' ownership stake itself is still fixed and external to this
+system — there is no per-partner equity/profit-share tracking. What *is*
+tracked is cash flowing into the business through the `accounts` funding
+buckets (Investment, Loans, Revenue) and from there into Petty Cash, the
+account the app actually spends from — see "Funding accounts" below.
+This reverses an earlier, deliberate "no capital tracking" decision;
+that decision no longer stands as of the accounts feature.
 
 ## Auth: username-based login (Option A)
 
@@ -39,6 +43,14 @@ an email:
 - No `username` column exists anywhere — the username is purely the
   local-part of this fake email convention. Do not add a lookup table for
   this; it's intentionally kept this simple for 3 users.
+- **Session persistence:** `Supabase.initialize` sets
+  `autoRefreshToken: true`, and `AuthGate` (see file structure below)
+  checks for a cached session on launch instead of always showing
+  LoginScreen. Once logged in, a partner stays logged in across app
+  restarts — no idle/inactivity logout is implemented client-side. (The
+  hard ceiling on this is Supabase's own refresh-token expiry, configured
+  in the Supabase dashboard under Authentication > Sessions, not in this
+  codebase.)
 
 ## Database schema (Supabase Postgres)
 
@@ -119,6 +131,32 @@ name        text (unique)
 created_at  timestamptz
 ```
 
+### `accounts`
+Fixed set of 4 funding buckets, seeded once and not user-addable from the
+UI: `Investment`, `Loans`, `Revenue`, `Petty Cash`.
+```
+id          uuid (PK)
+name        text (unique)
+created_at  timestamptz
+```
+
+### `account_transactions`
+Ledger of fund additions and transfers between accounts — separate from
+`transactions`, which is the expense/payroll/partner-loan ledger. See
+"Funding accounts" below for the full model.
+```
+id                  uuid (PK)
+account_id          uuid (FK -> accounts.id)
+type                text, one of: 'fund_add' | 'transfer_in' | 'transfer_out'
+amount              numeric (> 0)
+related_account_id  uuid (nullable, FK -> accounts.id) — the other side of
+                    a transfer
+note                text (nullable)
+transaction_date    date
+created_by          uuid (FK -> auth.users.id)
+created_at          timestamptz
+```
+
 ### `settings`
 Single-purpose key/value table. Currently holds one row:
 ```
@@ -126,8 +164,12 @@ key         text (PK)   e.g. 'opening_balance'
 value       numeric
 updated_at  timestamptz
 ```
-`opening_balance` anchors the running cash calculation (see Cash flow
-logic below), since the app doesn't track capital injections.
+`opening_balance` is still summed into Petty Cash's balance (see "Funding
+accounts" below) but is pinned at `0` and has **no editable UI** — capital
+now enters the system exclusively via `account_transactions` (fund a
+fundable account, then transfer it into Petty Cash). Don't re-add a
+Settings screen field for this column; if it ever needs to be nonzero
+again, that's a deliberate one-off SQL update, not a UI.
 
 ## Transaction type semantics (critical business logic)
 
@@ -171,25 +213,49 @@ amount > 0, also inserts a separate `advance_deduction` transaction
 "Advance handling detail" above. Repay amount is validated against both
 the owed balance and the base salary before saving.
 
-## Cash flow calculation
+## Funding accounts
 
-There is no running `cash_on_hand` column. It's computed on the fly:
+Four fixed accounts (`accounts` table) sit above the transaction ledger:
+**Investment**, **Loans**, **Revenue**, and **Petty Cash**. The first
+three are "fundable" — money is added to them directly (a capital
+investment, loan proceeds received, revenue collected). None of them can
+be spent from directly, and Petty Cash cannot be funded any other way:
+the **only** path into Petty Cash is a transfer from one of the other
+three. This is enforced by the UI (Add Funds only offers the fundable
+three; Transfer only offers them as a source and always targets Petty
+Cash), not by a DB constraint.
 
+Every account's balance is **calculated**, never stored, same philosophy
+as everywhere else in this app:
 ```
-cash_on_hand = opening_balance
-             + sum(loan_repayment.amount)
-             - sum(expense.amount)
-             - sum(payroll.amount)
-             - sum(loan.amount)
-             - sum(advance.amount)
+investment/loans/revenue balance = sum(fund_add.amount)
+                                  - sum(transfer_out.amount)
 ```
-`advance_deduction` is excluded entirely — it never affects cash.
+A transfer writes two `account_transactions` rows in one insert — a
+`transfer_out` on the source account and a `transfer_in` on Petty Cash —
+so each account's history page reads correctly on its own without a join.
 
-This is currently computed client-side in Dart by fetching all
-transactions and summing (fine at current scale — a 3-person farm
-business). If transaction volume grows significantly, move this
-aggregation into a Postgres view or RPC function so the database does the
-math instead of the client.
+**Petty Cash is the account the rest of the app actually means by "cash
+on hand".** Its balance folds in both the accounts ledger and the main
+transaction ledger:
+```
+petty_cash_balance = opening_balance
+                    + sum(account_transactions: transfer_in on Petty Cash)
+                    + sum(loan_repayment.amount)
+                    - sum(expense.amount)
+                    - sum(payroll.amount)
+                    - sum(loan.amount)
+                    - sum(advance.amount)
+```
+`advance_deduction` is excluded entirely — it never affects cash. The
+dashboard's cash-on-hand figure, and the balance that expense/payroll
+transactions actually draw down, are this Petty Cash figure — not a
+separate global total.
+
+This is all computed client-side in Dart by fetching the small ledger
+tables and summing (fine at current scale — a 3-person farm business). If
+volume grows significantly, move this aggregation into a Postgres view or
+RPC function so the database does the math instead of the client.
 
 ## Multiple invoices (multi-category expense entries)
 
@@ -222,8 +288,8 @@ updating in place — this avoids having to diff/reconcile individual
 ## Row Level Security (RLS) — the core security model
 
 Every table has RLS enabled. The pattern across `partners`, `staff`,
-`transactions`, `transaction_items`, `expense_categories`, and `settings`
-is:
+`transactions`, `transaction_items`, `expense_categories`, `settings`,
+`accounts`, and `account_transactions` is:
 
 - **Read:** any authenticated user (admin or viewer) — `using (true)`.
 - **Write (insert/update/delete):** only rows where the requesting user's
@@ -260,8 +326,10 @@ run flutter_launcher_icons` to regenerate.
 
 ```
 lib/
-├── main.dart                      — Supabase init, MaterialApp, exposes
-│                                     the global `supabase` client
+├── main.dart                      — Supabase init (autoRefreshToken on,
+│                                     for persistent login), MaterialApp,
+│                                     exposes the global `supabase` client.
+│                                     `home` is AuthGate, not LoginScreen.
 ├── widgets/
 │   └── app_drawer.dart            — side navigation Drawer, opened via
 │                                     the dashboard's hamburger icon.
@@ -271,6 +339,11 @@ lib/
 │                                     (Expense categories, Staff,
 │                                     Partners, Settings) for admins only.
 ├── screens/
+│   ├── auth_gate.dart             — the actual `home` widget. Renders
+│   │                                 DashboardScreen if a session is
+│   │                                 already cached (persisted locally by
+│   │                                 supabase_flutter), else LoginScreen;
+│   │                                 also reacts live to onAuthStateChange.
 │   ├── login_screen.dart          — username/password login (appends
 │   │                                 @janatayn.local internally)
 │   ├── dashboard_screen.dart      — main screen after login. Fetches
@@ -305,9 +378,29 @@ lib/
 │   │                                 the drawer.
 │   ├── partners_screen.dart       — list of partners with an add-new
 │   │                                 form. Reached from the drawer.
-│   ├── settings_screen.dart       — edits the `settings` table's
-│   │                                 `opening_balance` row. Reached from
-│   │                                 the drawer.
+│   ├── settings_screen.dart       — the "Accounts" section: the 4
+│   │                                 funding-account balances as tappable
+│   │                                 cards (→ AccountHistoryScreen) plus
+│   │                                 "Add funds" and "Transfer" buttons.
+│   │                                 No opening-balance field anymore -
+│   │                                 see the `settings` table note above.
+│   │                                 Reached from the drawer.
+│   ├── add_funds_screen.dart      — adds funds to Investment, Loans, or
+│   │                                 Revenue only (Petty Cash excluded).
+│   │                                 Inserts one `fund_add` row.
+│   ├── transfer_funds_screen.dart — moves funds from Investment/Loans/
+│   │                                 Revenue into Petty Cash — the only
+│   │                                 way Petty Cash is funded. Shows each
+│   │                                 source account's available balance
+│   │                                 and validates against it. Inserts a
+│   │                                 transfer_out + transfer_in pair.
+│   ├── account_history_screen.dart — balance + ledger for one account.
+│   │                                 For Petty Cash, folds in the main
+│   │                                 `transactions` table (expenses,
+│   │                                 payroll, loans, advances,
+│   │                                 repayments) alongside its
+│   │                                 transfer_in rows, since that's what
+│   │                                 actually moves its balance.
 │   ├── transaction_log_screen.dart — searchable, filterable list of all
 │   │                                 transactions. Search bar (matches
 │   │                                 note/partner/staff/category), date
@@ -350,30 +443,65 @@ re-fetching and re-summing independently.
 
 ## Design language
 
-- Background: `Color(0xFFF7F7F5)` (soft off-white), flat AppBars with
-  `elevation: 0` matching that background.
+**All tokens live in `lib/theme/app_theme.dart` and the shared widgets in
+`lib/widgets/app_ui.dart`. Use those rather than hardcoding colors,
+radii or shadows** — a screen that reaches for `Colors.grey.shade200` or
+a raw hex is drifting from the system.
+
+- **Brand palette** (`AppColors`), taken from the logo: `brandGreen`
+  `#1B5E3A` (primary), `brandGreenLight` `#2E8B57`, `brandGreenDeep`
+  `#0F3D25`, `brandNavy` `#1E3A5F`, `brandRed` `#B93B36`, `cream`
+  `#EEEFEA`.
+- Background: `AppColors.canvas` `#F5F6F1` (soft, faintly warm off-white);
+  AppBars are flat (`elevation: 0`) on that same background, styled once
+  in `AppTheme.light` rather than per screen.
+- Ink: `AppColors.ink` for primary text, `inkSecondary` for labels,
+  `inkMuted` for dates/hints. Don't use `Colors.grey[...]`.
 - Currency: always formatted via `intl`'s `NumberFormat.currency(symbol:
   '\$', decimalDigits: 2)` — never manual string interpolation like
   `'\$${value.toStringAsFixed(2)}'`, to keep thousands separators
   consistent everywhere.
-- Cards: white background, light grey 1px borders (`Colors.grey.shade200`
-  or `.shade300`), 10–12px border radius, no shadows.
-- Color coding by transaction type (used for icon circles and amount
-  text): `expense` = red, `payroll` = orange, `loan` = blue, `advance` =
-  purple, `loan_repayment`/cash-in = green, `advance_deduction`/neutral =
-  grey (shown without a +/- sign since no cash moves).
-- Type selector uses `ChoiceChip` pills, not dropdowns, for fast tapping.
+- **Cards** use the `AppCard` widget (or `AppStyles.card`): white, 16px
+  radius, hairline border, and a soft low-contrast shadow. Stat tiles use
+  `AppCard(accent: color)` / `AppStyles.accentCard`, which tints the
+  border with the metric's color.
+- **Color coding by transaction type** — `AppColors.forType(type)` is the
+  single source of truth: `expense` = red, `payroll` = orange, `loan` =
+  blue, `advance` = purple, `loan_repayment`/cash-in = green,
+  `advance_deduction`/neutral = grey (shown without a +/- sign since no
+  cash moves). Each type also carries an icon, rendered in an `IconBadge`
+  (a tinted rounded square) — that badge is the app's main splash of
+  color and appears in lists, the drawer, and the dashboard.
+- **The cash-on-hand hero** on the dashboard is the one gradient surface
+  (brand green, white text, decorative rings). Keep gradients rare — one
+  hero per screen at most, or the app starts to look noisy.
+- Categories/staff/partners get a *decorative* stable color via
+  `AppColors.accentFor(name)` and initials via `InitialsAvatar`. This
+  encodes nothing; it just keeps long lists lively.
+- Type selector on Add Transaction uses tinted, icon-bearing buttons in a
+  2×2 grid; filter chips elsewhere are `ChoiceChip` pills tinted with the
+  type's own color when selected.
+- Shared states: `EmptyState` for empty lists, `ErrorNote` for inline
+  errors (never bare red text), `SectionLabel` for uppercase group
+  headers, `BrandLogo` for the logo on its cream plate.
 
 ## Conventions to preserve when adding features
 
+0. New screens should be built from `AppTheme` + `lib/widgets/app_ui.dart`
+   (`AppCard`, `IconBadge`, `StatTile`, `SectionLabel`, `EmptyState`,
+   `ErrorNote`). Don't set `backgroundColor`/`elevation` on Scaffold or
+   AppBar — the theme already does, and overriding it is what makes
+   screens drift apart visually.
 1. Any new writable table needs the same RLS pattern: read = all
    authenticated users, write = admin role only.
 2. New transaction-adjacent features should go through `transactions` +
-   `transaction_items`, not new bespoke tables, unless the data genuinely
-   isn't a cash event.
-3. Don't reintroduce capital-injection tracking or per-partner financial
-   profile fields — this was deliberately removed; partners are a simple
-   name lookup only.
+   `transaction_items` (expense/payroll/partner-loan events) or
+   `accounts` + `account_transactions` (funding/capital events), not new
+   bespoke tables, unless the data genuinely isn't a cash event.
+3. Partners are still just a simple name lookup — no per-partner
+   equity/profit-share fields. Capital *is* tracked now (see "Funding
+   accounts"), but it's tracked at the business level via `accounts`, not
+   attributed to individual partners.
 4. Keep the opening balance / calculated-balance approach — avoid adding
-   stored running-balance columns that could drift out of sync with the
-   transaction history.
+   stored running-balance columns (including a stored balance on
+   `accounts`) that could drift out of sync with the ledger tables.

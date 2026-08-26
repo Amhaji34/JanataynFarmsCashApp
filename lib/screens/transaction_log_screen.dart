@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../main.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_ui.dart';
 import 'add_transaction_screen.dart';
 
 class TransactionLogScreen extends StatefulWidget {
@@ -150,8 +152,10 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
     };
     for (final t in _searchAndDateFiltered) {
       final type = t['type'] as String;
-      if (!totals.containsKey(type))
-        continue; // skip loan_repayment / advance_deduction
+      // skip loan_repayment / advance_deduction
+      if (!totals.containsKey(type)) {
+        continue;
+      }
       totals[type] = totals[type]! + (t['amount'] as num).toDouble();
     }
     return totals;
@@ -178,22 +182,7 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
     }
   }
 
-  Color _colorFor(String type) {
-    if (_isCashIn(type)) return Colors.green;
-    if (_isNeutral(type)) return Colors.grey;
-    switch (type) {
-      case 'expense':
-        return Colors.red;
-      case 'payroll':
-        return Colors.orange;
-      case 'loan':
-        return Colors.blue;
-      case 'advance':
-        return Colors.purple;
-      default:
-        return Colors.grey;
-    }
-  }
+  Color _colorFor(String type) => AppColors.forType(type);
 
   String _typeLabel(String type) =>
       type[0].toUpperCase() + type.substring(1).replaceAll('_', ' ');
@@ -242,12 +231,16 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
         children: [
           Text(
             breakdown,
-            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.inkSecondary,
+              height: 1.3,
+            ),
           ),
-          const SizedBox(height: 2),
+          const SizedBox(height: 3),
           Text(
             dateText,
-            style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+            style: const TextStyle(fontSize: 12, color: AppColors.inkMuted),
           ),
         ],
       );
@@ -255,7 +248,7 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
 
     return Text(
       dateText,
-      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+      style: const TextStyle(fontSize: 12, color: AppColors.inkMuted),
     );
   }
 
@@ -297,46 +290,38 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
     final totals = _categoryTotals;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F7F5),
-      appBar: AppBar(
-        title: const Text('Transactions'),
-        backgroundColor: const Color(0xFFF7F7F5),
-        elevation: 0,
-      ),
+      appBar: AppBar(title: const Text('Transactions')),
       body: RefreshIndicator(
         onRefresh: _loadTransactions,
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : _errorMessage != null
-            ? Center(
-                child: Text(
-                  _errorMessage!,
-                  style: const TextStyle(color: Colors.red),
-                ),
+            ? Padding(
+                padding: const EdgeInsets.all(20),
+                child: Center(child: ErrorNote(_errorMessage!)),
               )
             : Column(
                 children: [
                   // Search bar
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
                     child: TextField(
                       controller: _searchController,
                       decoration: InputDecoration(
                         hintText: 'Search fuel, fencing, water...',
-                        prefixIcon: const Icon(Icons.search, size: 20),
+                        isDense: true,
+                        prefixIcon: const Icon(
+                          Icons.search,
+                          size: 20,
+                          color: AppColors.inkMuted,
+                        ),
                         suffixIcon: _searchQuery.isNotEmpty
                             ? IconButton(
                                 icon: const Icon(Icons.clear, size: 18),
+                                color: AppColors.inkMuted,
                                 onPressed: () => _searchController.clear(),
                               )
                             : null,
-                        filled: true,
-                        fillColor: Colors.white,
-                        isDense: true,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
-                        ),
                       ),
                     ),
                   ),
@@ -349,6 +334,23 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
                         Expanded(
                           child: OutlinedButton.icon(
                             onPressed: _pickDateRange,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: _dateRange == null
+                                  ? AppColors.inkSecondary
+                                  : AppColors.brandGreen,
+                              backgroundColor: _dateRange == null
+                                  ? AppColors.surface
+                                  : AppColors.brandGreen.withValues(
+                                      alpha: 0.08,
+                                    ),
+                              side: BorderSide(
+                                color: _dateRange == null
+                                    ? AppColors.hairline
+                                    : AppColors.brandGreen.withValues(
+                                        alpha: 0.35,
+                                      ),
+                              ),
+                            ),
                             icon: const Icon(
                               Icons.calendar_today_outlined,
                               size: 15,
@@ -357,75 +359,117 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
                               _dateRange == null
                                   ? 'Filter by date'
                                   : '${_dateFormat.format(_dateRange!.start)} - ${_dateFormat.format(_dateRange!.end)}',
-                              style: const TextStyle(fontSize: 13),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                         ),
                         if (_dateRange != null)
                           IconButton(
                             icon: const Icon(Icons.close, size: 18),
+                            color: AppColors.inkMuted,
                             onPressed: _clearDateRange,
                           ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
 
-                  // Category totals
+                  // Per-type totals
                   SizedBox(
-                    height: 74,
+                    height: 82,
                     child: ListView(
                       scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       children: [
-                        _totalCard('Expenses', totals['expense']!, Colors.red),
+                        _totalCard(
+                          'Expenses',
+                          totals['expense']!,
+                          AppColors.expense,
+                          Icons.receipt_long_outlined,
+                        ),
                         _totalCard(
                           'Payroll',
                           totals['payroll']!,
-                          Colors.orange,
+                          AppColors.payroll,
+                          Icons.payments_outlined,
                         ),
-                        _totalCard('Loans', totals['loan']!, Colors.blue),
+                        _totalCard(
+                          'Loans',
+                          totals['loan']!,
+                          AppColors.loan,
+                          Icons.pan_tool_outlined,
+                        ),
                         _totalCard(
                           'Advances',
                           totals['advance']!,
-                          Colors.purple,
+                          AppColors.advance,
+                          Icons.pan_tool_alt_outlined,
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
 
-                  // Type filter chips
+                  // Type filter chips, tinted with each type's own color
                   SizedBox(
-                    height: 44,
+                    height: 40,
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 6,
-                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       itemCount: _filters.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 8),
+                      separatorBuilder: (_, _) => const SizedBox(width: 8),
                       itemBuilder: (context, index) {
                         final filter = _filters[index];
-                        final selected = filter['value'] == _selectedFilter;
+                        final value = filter['value']!;
+                        final selected = value == _selectedFilter;
+                        final chipColor = value == 'all'
+                            ? AppColors.brandGreen
+                            : AppColors.forType(value);
                         return ChoiceChip(
                           label: Text(filter['label']!),
                           selected: selected,
-                          onSelected: (_) => setState(
-                            () => _selectedFilter = filter['value']!,
+                          onSelected: (_) =>
+                              setState(() => _selectedFilter = value),
+                          selectedColor: chipColor,
+                          backgroundColor: AppColors.surface,
+                          side: BorderSide(
+                            color: selected
+                                ? chipColor
+                                : AppColors.hairline,
                           ),
+                          labelStyle: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: selected
+                                ? Colors.white
+                                : AppColors.inkSecondary,
+                          ),
+                          showCheckmark: false,
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
                         );
                       },
                     ),
                   ),
+                  const SizedBox(height: 10),
 
                   Expanded(
                     child: _filteredTransactions.isEmpty
-                        ? const Center(child: Text('No transactions found.'))
-                        : ListView.builder(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                        ? const EmptyState(
+                            icon: Icons.search_off_outlined,
+                            title: 'No transactions found',
+                            subtitle:
+                                'Try clearing your search or date filter.',
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
                             itemCount: _filteredTransactions.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(height: 10),
                             itemBuilder: (context, index) {
                               final t = _filteredTransactions[index];
                               final type = t['type'] as String;
@@ -437,34 +481,19 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
                               final isIn = _isCashIn(type);
                               final isNeutral = _isNeutral(type);
 
-                              return Container(
+                              return AppCard(
                                 padding: const EdgeInsets.symmetric(
-                                  vertical: 10,
-                                ),
-                                decoration: BoxDecoration(
-                                  border: Border(
-                                    bottom: BorderSide(
-                                      color: Colors.grey.shade200,
-                                    ),
-                                  ),
+                                  horizontal: 14,
+                                  vertical: 12,
                                 ),
                                 child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Container(
-                                      width: 34,
-                                      height: 34,
-                                      decoration: BoxDecoration(
-                                        color: color.withValues(alpha: 0.1),
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: Icon(
-                                        _iconFor(type),
-                                        size: 16,
-                                        color: color,
-                                      ),
+                                    IconBadge(
+                                      icon: _iconFor(type),
+                                      color: color,
                                     ),
-                                    const SizedBox(width: 10),
+                                    const SizedBox(width: 12),
                                     Expanded(
                                       child: Column(
                                         crossAxisAlignment:
@@ -473,14 +502,17 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
                                           Text(
                                             _titleFor(t),
                                             style: const TextStyle(
-                                              fontSize: 14,
+                                              fontSize: 14.5,
+                                              fontWeight: FontWeight.w600,
+                                              color: AppColors.ink,
                                             ),
                                           ),
-                                          const SizedBox(height: 2),
+                                          const SizedBox(height: 3),
                                           _subtitleFor(t, date),
                                         ],
                                       ),
                                     ),
+                                    const SizedBox(width: 8),
                                     Column(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.end,
@@ -490,26 +522,57 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
                                               ? _currency.format(amount)
                                               : '${isIn ? '+' : '-'}${_currency.format(amount)}',
                                           style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w500,
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w700,
+                                            letterSpacing: -0.2,
                                             color: isNeutral
-                                                ? Colors.grey[600]
+                                                ? AppColors.inkMuted
                                                 : color,
                                           ),
                                         ),
                                         if (_role == 'admin')
-                                          InkWell(
-                                            onTap: () => _openEditSheet(t),
-                                            borderRadius:
-                                                BorderRadius.circular(6),
-                                            child: Padding(
-                                              padding: const EdgeInsets.only(
-                                                top: 4,
-                                              ),
-                                              child: Icon(
-                                                Icons.edit_outlined,
-                                                size: 16,
-                                                color: Colors.grey.shade500,
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                              top: 6,
+                                            ),
+                                            child: InkWell(
+                                              onTap: () => _openEditSheet(t),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 4,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: AppColors.canvas,
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                ),
+                                                child: const Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    Icon(
+                                                      Icons.edit_outlined,
+                                                      size: 13,
+                                                      color:
+                                                          AppColors.inkMuted,
+                                                    ),
+                                                    SizedBox(width: 4),
+                                                    Text(
+                                                      'Edit',
+                                                      style: TextStyle(
+                                                        fontSize: 11.5,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        color:
+                                                            AppColors.inkMuted,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
                                               ),
                                             ),
                                           ),
@@ -527,26 +590,37 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
     );
   }
 
-  Widget _totalCard(String label, double value, Color color) {
+  Widget _totalCard(String label, double value, Color color, IconData icon) {
     return Container(
-      width: 110,
-      margin: const EdgeInsets.only(right: 8),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
+      width: 132,
+      margin: const EdgeInsets.only(right: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: AppStyles.accentCard(color),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-          const SizedBox(height: 4),
+          Row(
+            children: [
+              Icon(icon, size: 14, color: color),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.inkSecondary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
           Text(
             _currency.format(value),
             style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.3,
               color: color,
             ),
             overflow: TextOverflow.ellipsis,
@@ -567,8 +641,6 @@ class _EditTransactionSheet extends StatefulWidget {
 }
 
 class _EditTransactionSheetState extends State<_EditTransactionSheet> {
-  static const _borderColor = Color(0xFFE5E5E5);
-
   late DateTime _selectedDate;
   late final TextEditingController _noteController;
   late final TextEditingController _amountController;
@@ -645,30 +717,6 @@ class _EditTransactionSheetState extends State<_EditTransactionSheet> {
     }
   }
 
-  InputDecoration _fieldDecoration({String? hint}) {
-    return InputDecoration(
-      hintText: hint,
-      filled: true,
-      fillColor: Colors.white,
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 14,
-      ),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: _borderColor),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: _borderColor),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFBBBBBB)),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final t = widget.transaction;
@@ -677,149 +725,179 @@ class _EditTransactionSheetState extends State<_EditTransactionSheet> {
     final subtitle = _items.isNotEmpty
         ? '$label · ${_items.first['category']}'
         : label;
+    final accent = AppColors.forType(type);
 
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: Container(
         decoration: const BoxDecoration(
-          color: Color(0xFFF7F7F5),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          color: AppColors.canvas,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
         ),
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Edit transaction',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(context).pop(false),
-                ),
-              ],
-            ),
-            Text(
-              subtitle,
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-            ),
-            const SizedBox(height: 20),
-
-            Text(
-              'Date',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-            ),
-            const SizedBox(height: 6),
-            Material(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              child: InkWell(
-                onTap: _pickDate,
-                borderRadius: BorderRadius.circular(12),
+        padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: _borderColor),
+                    color: AppColors.hairline,
+                    borderRadius: BorderRadius.circular(2),
                   ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          _dateFormat.format(_selectedDate),
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w500,
+                ),
+              ),
+              Row(
+                children: [
+                  IconBadge(
+                    icon: Icons.edit_outlined,
+                    color: accent,
+                    size: 40,
+                    iconSize: 19,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Edit transaction',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.ink,
                           ),
                         ),
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            color: AppColors.inkMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    color: AppColors.inkMuted,
+                    onPressed: () => Navigator.of(context).pop(false),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              const SectionLabel('DATE'),
+              const SizedBox(height: 7),
+              Material(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(AppStyles.radiusField),
+                child: InkWell(
+                  onTap: _pickDate,
+                  borderRadius: BorderRadius.circular(AppStyles.radiusField),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 15,
+                    ),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(
+                        AppStyles.radiusField,
                       ),
-                      Icon(
-                        Icons.calendar_today_outlined,
-                        size: 18,
-                        color: Colors.grey.shade600,
-                      ),
-                    ],
+                      border: Border.all(color: AppColors.hairline),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.calendar_today_outlined,
+                          size: 17,
+                          color: AppColors.brandGreen,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _dateFormat.format(_selectedDate),
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.ink,
+                            ),
+                          ),
+                        ),
+                        const Icon(
+                          Icons.keyboard_arrow_down,
+                          size: 20,
+                          color: AppColors.inkMuted,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 20),
+              const SizedBox(height: 18),
 
-            Text(
-              'Amount',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-            ),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _amountController,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              decoration: _fieldDecoration().copyWith(prefixText: '\$ '),
-            ),
-            const SizedBox(height: 20),
-
-            Text(
-              'Note',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-            ),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _noteController,
-              decoration: _fieldDecoration(hint: 'Add a note'),
-            ),
-            const SizedBox(height: 24),
-
-            if (_errorMessage != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: Text(
-                  _errorMessage!,
-                  style: const TextStyle(color: Colors.red, fontSize: 13),
+              const SectionLabel('AMOUNT'),
+              const SizedBox(height: 7),
+              TextField(
+                controller: _amountController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
                 ),
-              ),
-
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: _saving ? null : _save,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black,
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor: Colors.grey.shade400,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.ink,
+                ),
+                decoration: const InputDecoration(
+                  prefixText: '\$ ',
+                  prefixStyle: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.ink,
                   ),
                 ),
-                child: _saving
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Text(
-                        'Save changes',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
               ),
-            ),
-          ],
+              const SizedBox(height: 18),
+
+              const SectionLabel('NOTE'),
+              const SizedBox(height: 7),
+              TextField(
+                controller: _noteController,
+                decoration: const InputDecoration(hintText: 'Add a note'),
+              ),
+
+              if (_errorMessage != null) ...[
+                const SizedBox(height: 16),
+                ErrorNote(_errorMessage!),
+              ],
+              const SizedBox(height: 24),
+
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: _saving ? null : _save,
+                  child: _saving
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Save changes'),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

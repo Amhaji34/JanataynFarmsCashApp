@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../main.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_ui.dart';
 
 class ExpenseCategoriesScreen extends StatefulWidget {
   const ExpenseCategoriesScreen({super.key});
@@ -10,8 +12,6 @@ class ExpenseCategoriesScreen extends StatefulWidget {
 }
 
 class _ExpenseCategoriesScreenState extends State<ExpenseCategoriesScreen> {
-  static const _borderColor = Color(0xFFE5E5E5);
-
   bool _loading = true;
   String? _errorMessage;
   List<Map<String, dynamic>> _categories = [];
@@ -73,110 +73,122 @@ class _ExpenseCategoriesScreenState extends State<ExpenseCategoriesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F7F5),
-      appBar: AppBar(
-        title: const Text('Expense categories'),
-        backgroundColor: const Color(0xFFF7F7F5),
-        elevation: 0,
-      ),
+      appBar: AppBar(title: const Text('Expense categories')),
       body: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _nameController,
-                    decoration: InputDecoration(
-                      hintText: 'New category name',
-                      filled: true,
-                      fillColor: Colors.white,
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 14,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: _borderColor),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: _borderColor),
-                      ),
-                    ),
-                    onSubmitted: (_) => _addCategory(),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                SizedBox(
-                  height: 48,
-                  child: ElevatedButton(
-                    onPressed: _adding ? null : _addCategory,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.black,
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor: Colors.grey.shade400,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: _adding
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
+            AppCard(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SectionLabel('ADD A CATEGORY'),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _nameController,
+                          textCapitalization: TextCapitalization.words,
+                          decoration: const InputDecoration(
+                            hintText: 'e.g. Fuel',
+                            isDense: true,
+                            prefixIcon: Icon(
+                              Icons.new_label_outlined,
+                              size: 19,
+                              color: AppColors.inkMuted,
                             ),
-                          )
-                        : const Text('Add'),
+                          ),
+                          onSubmitted: (_) => _addCategory(),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      SizedBox(
+                        height: 48,
+                        child: ElevatedButton(
+                          onPressed: _adding ? null : _addCategory,
+                          child: _adding
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Text('Add'),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ],
+                  if (_addError != null) ...[
+                    const SizedBox(height: 12),
+                    ErrorNote(_addError!),
+                  ],
+                ],
+              ),
             ),
-            if (_addError != null)
+            const SizedBox(height: 22),
+            if (!_loading && _errorMessage == null && _categories.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  _addError!,
-                  style: const TextStyle(color: Colors.red, fontSize: 13),
+                padding: const EdgeInsets.only(left: 4, bottom: 10),
+                child: SectionLabel(
+                  'ALL CATEGORIES',
+                  trailing: Text(
+                    '${_categories.length}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.inkMuted,
+                    ),
+                  ),
                 ),
               ),
-            const SizedBox(height: 20),
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : _errorMessage != null
-                  ? Center(
-                      child: Text(
-                        _errorMessage!,
-                        style: const TextStyle(color: Colors.red),
-                      ),
-                    )
+                  ? Center(child: ErrorNote(_errorMessage!))
                   : _categories.isEmpty
-                  ? const Center(child: Text('No categories yet.'))
+                  ? const EmptyState(
+                      icon: Icons.category_outlined,
+                      title: 'No categories yet',
+                      subtitle:
+                          'Add categories like Fuel, Water or Food to track '
+                          'where your money goes.',
+                    )
                   : ListView.separated(
+                      padding: const EdgeInsets.only(bottom: 8),
                       itemCount: _categories.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 8),
+                      separatorBuilder: (_, _) => const SizedBox(height: 10),
                       itemBuilder: (context, index) {
-                        final category = _categories[index];
-                        return Container(
+                        final name = _categories[index]['name'] as String;
+                        final color = AppColors.accentFor(name);
+                        return AppCard(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 14,
+                            horizontal: 14,
+                            vertical: 12,
                           ),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.grey.shade200),
-                          ),
-                          child: Text(
-                            category['name'] as String,
-                            style: const TextStyle(fontSize: 15),
+                          child: Row(
+                            children: [
+                              IconBadge(
+                                icon: AppIcons.forCategory(name),
+                                color: color,
+                              ),
+                              const SizedBox(width: 13),
+                              Expanded(
+                                child: Text(
+                                  name,
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppColors.ink,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         );
                       },

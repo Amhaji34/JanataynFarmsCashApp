@@ -4,7 +4,9 @@ import 'login_screen.dart';
 import 'package:intl/intl.dart';
 import 'add_transaction_screen.dart';
 import 'transaction_log_screen.dart';
+import '../theme/app_theme.dart';
 import '../widgets/app_drawer.dart';
+import '../widgets/app_ui.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -81,10 +83,27 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
           .single();
       final opening = (settingsRow['value'] as num).toDouble();
 
+      // 2b. Petty Cash top-ups (transfers in from Investment/Loans/Revenue -
+      // the only way Petty Cash is ever funded; see Settings > Accounts).
+      final pettyCashAccount = await supabase
+          .from('accounts')
+          .select()
+          .eq('name', 'Petty Cash')
+          .single();
+      final transfersIn = await supabase
+          .from('account_transactions')
+          .select('amount')
+          .eq('account_id', pettyCashAccount['id'])
+          .eq('type', 'transfer_in');
+      double pettyCashTransfersIn = 0;
+      for (final t in transfersIn) {
+        pettyCashTransfersIn += (t['amount'] as num).toDouble();
+      }
+
       // 3. All transactions (fine for small volume; we'll optimize later if needed)
       final txns = await supabase.from('transactions').select();
 
-      double cash = opening;
+      double cash = opening + pettyCashTransfersIn;
       double loansOut = 0;
       double loansRepaid = 0;
       double advancesOut = 0;
@@ -139,6 +158,7 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
         }
       }
 
+      if (!mounted) return;
       setState(() {
         _cashOnHand = cash;
         _outstandingLoans = loansOut - loansRepaid;
@@ -151,6 +171,7 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
         _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = 'Error loading dashboard: $e';
         _loading = false;
@@ -170,149 +191,171 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F7F5),
       appBar: AppBar(
         title: const Text('Dashboard'),
-        backgroundColor: const Color(0xFFF7F7F5),
-        elevation: 0,
         actions: [
-          IconButton(icon: const Icon(Icons.logout), onPressed: _logout),
+          IconButton(
+            icon: const Icon(Icons.logout, size: 21),
+            color: AppColors.inkSecondary,
+            onPressed: _logout,
+          ),
+          const SizedBox(width: 4),
         ],
       ),
       drawer: AppDrawer(name: _name, role: _role),
       floatingActionButton: _role == 'admin'
-          ? FloatingActionButton(
+          ? FloatingActionButton.extended(
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => const AddTransactionScreen(),
                 ),
               ),
-              child: const Icon(Icons.add),
+              icon: const Icon(Icons.add, size: 22),
+              label: const Text(
+                'New',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
             )
           : null,
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
-          ? Center(
-              child: Text(
-                _errorMessage!,
-                style: const TextStyle(color: Colors.red),
-              ),
+          ? Padding(
+              padding: const EdgeInsets.all(20),
+              child: Center(child: ErrorNote(_errorMessage!)),
             )
           : ListView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
               children: [
-                Text(
-                  'Welcome back',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                _greeting(),
+                const SizedBox(height: 16),
+                _cashHeroCard(),
+                const SizedBox(height: 14),
+
+                Row(
+                  children: [
+                    Expanded(
+                      child: StatTile(
+                        icon: Icons.handshake_outlined,
+                        label: 'Owed by partners',
+                        value: _formatCurrency(_outstandingLoans),
+                        color: AppColors.loan,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: StatTile(
+                        icon: Icons.person_outline,
+                        label: 'Owed by staff',
+                        value: _formatCurrency(_outstandingAdvances),
+                        color: AppColors.advance,
+                      ),
+                    ),
+                  ],
                 ),
-                Text(
-                  _name ?? '',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: StatTile(
+                        icon: Icons.trending_down_outlined,
+                        label: 'Total expenses',
+                        value: _formatCurrency(_totalExpenses),
+                        color: AppColors.expense,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: StatTile(
+                        icon: Icons.calendar_month_outlined,
+                        label: 'This month\'s expenses',
+                        value: _formatCurrency(_monthExpenses),
+                        color: AppColors.brandNavy,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+
+                SectionLabel(
+                  'THIS MONTH',
+                  trailing: Text(
+                    DateFormat('MMMM yyyy').format(DateTime.now()),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.inkMuted,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 20),
-
-                // Cash on hand card
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade200),
+                const SizedBox(height: 10),
+                AppCard(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 4,
                   ),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Cash on hand',
-                        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                      _monthRow(
+                        Icons.receipt_long_outlined,
+                        'Expenses',
+                        _monthBills,
+                        AppColors.expense,
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        _formatCurrency(_cashOnHand),
-                        style: const TextStyle(
-                          fontSize: 30,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      const Divider(height: 1),
+                      _monthRow(
+                        Icons.payments_outlined,
+                        'Payroll',
+                        _monthPayroll,
+                        AppColors.payroll,
+                      ),
+                      const Divider(height: 1),
+                      _monthRow(
+                        Icons.back_hand_outlined,
+                        'Advances',
+                        _monthAdvancesGiven,
+                        AppColors.advance,
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 16),
 
-                // Two metric cards side by side
-                Row(
-                  children: [
-                    Expanded(
-                      child: _metricCard(
-                        icon: Icons.people_outline,
-                        label: 'Owed by partners',
-                        value: _outstandingLoans,
-                      ),
+                AppCard(
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const TransactionLogScreen(),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _metricCard(
-                        icon: Icons.person_outline,
-                        label: 'Owed by staff',
-                        value: _outstandingAdvances,
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
+                  child: Row(
+                    children: [
+                      const IconBadge(
+                        icon: Icons.list_alt_outlined,
+                        color: AppColors.brandGreenLight,
+                        size: 34,
+                        iconSize: 17,
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-
-                // Expense summary cards side by side
-                Row(
-                  children: [
-                    Expanded(
-                      child: _metricCard(
-                        icon: Icons.trending_down_outlined,
-                        label: 'Total expenses',
-                        value: _totalExpenses,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _metricCard(
-                        icon: Icons.calendar_month_outlined,
-                        label: 'This month\'s expenses',
-                        value: _monthExpenses,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-
-                Text(
-                  'This month',
-                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-                ),
-
-                const SizedBox(height: 10),
-                _monthRow(Icons.receipt_long_outlined, 'Expenses', _monthBills),
-                _monthRow(Icons.payments_outlined, 'Payroll', _monthPayroll),
-                _monthRow(
-                  Icons.back_hand_outlined,
-                  'Advances',
-                  _monthAdvancesGiven,
-                ),
-                const SizedBox(height: 10),
-                Center(
-                  child: Align(
-                    alignment: Alignment.center,
-                    child: TextButton(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const TransactionLogScreen(),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          'View all transactions',
+                          style: TextStyle(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.ink,
+                          ),
                         ),
                       ),
-                      child: const Text('View all transactions'),
-                    ),
+                      Icon(
+                        Icons.arrow_forward_ios,
+                        size: 14,
+                        color: AppColors.inkMuted.withValues(alpha: 0.7),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -320,49 +363,182 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
     );
   }
 
-  Widget _metricCard({
-    required IconData icon,
-    required String label,
-    required double value,
-  }) {
+  Widget _greeting() {
+    final isAdmin = _role == 'admin';
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Welcome back',
+                style: TextStyle(fontSize: 12.5, color: AppColors.inkMuted),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                _name ?? '',
+                style: const TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.ink,
+                  letterSpacing: -0.3,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (_role != null)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+            decoration: BoxDecoration(
+              color: (isAdmin ? AppColors.brandGreen : AppColors.brandNavy)
+                  .withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(AppStyles.radiusPill),
+            ),
+            child: Text(
+              isAdmin ? 'Admin' : 'Viewer',
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.2,
+                color: isAdmin ? AppColors.brandGreen : AppColors.brandNavy,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _cashHeroCard() {
     return Container(
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 18, color: Colors.grey[600]),
-          const SizedBox(height: 8),
-          Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-          const SizedBox(height: 2),
-          Text(
-            _formatCurrency(value),
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.brandGreen.withValues(alpha: 0.28),
+            blurRadius: 22,
+            offset: const Offset(0, 8),
           ),
         ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [AppColors.brandGreenLight, AppColors.brandGreenDeep],
+            ),
+          ),
+          child: Stack(
+            children: [
+              // Soft decorative rings, clipped by the card's rounded corners.
+              Positioned(
+                top: -46,
+                right: -28,
+                child: Container(
+                  width: 150,
+                  height: 150,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withValues(alpha: 0.07),
+                  ),
+                ),
+              ),
+              Positioned(
+                bottom: -62,
+                right: 40,
+                child: Container(
+                  width: 120,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withValues(alpha: 0.05),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(11),
+                          ),
+                          child: const Icon(
+                            Icons.account_balance_wallet_outlined,
+                            size: 17,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Cash on hand',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.2,
+                            color: Colors.white.withValues(alpha: 0.88),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        _formatCurrency(_cashOnHand),
+                        style: const TextStyle(
+                          fontSize: 36,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          letterSpacing: -1.0,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  Widget _monthRow(IconData icon, String label, double value) {
+  Widget _monthRow(IconData icon, String label, double value, Color color) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 11),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              Icon(icon, size: 16, color: Colors.grey[600]),
-              const SizedBox(width: 8),
-              Text(label, style: const TextStyle(fontSize: 14)),
-            ],
+          IconBadge(icon: icon, color: color, size: 32, iconSize: 16),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 14.5,
+                color: AppColors.ink,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
           Text(
             _formatCurrency(value),
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            style: const TextStyle(
+              fontSize: 14.5,
+              fontWeight: FontWeight.w700,
+              color: AppColors.ink,
+            ),
           ),
         ],
       ),

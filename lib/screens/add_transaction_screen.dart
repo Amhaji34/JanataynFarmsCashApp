@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../main.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_ui.dart';
 import 'expense_categories_screen.dart';
 
 class AddTransactionScreen extends StatefulWidget {
@@ -32,11 +34,7 @@ class _LineItem {
 class _AddTransactionScreenState extends State<AddTransactionScreen> {
   static const _types = ['expense', 'payroll', 'loan', 'advance'];
 
-  static const _borderColor = Color(0xFFE5E5E5);
-  static const _labelColor = Color(0xFF6B6B6B);
-  static const _splitBg = Color(0xFFD6E8F8);
-  static const _splitFg = Color(0xFF2B6CB0);
-  static const _allocatedOk = Color(0xFF2F6B3A);
+  static const _allocatedOk = AppColors.cashIn;
 
   String _selectedType = 'expense';
 
@@ -353,42 +351,56 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     return '';
   }
 
-  IconData _iconForCategory(String name) {
-    final lower = name.toLowerCase();
-    if (lower.contains('fuel') || lower.contains('gas')) return Icons.water_drop_outlined;
-    if (lower.contains('water')) return Icons.local_bar_outlined;
-    if (lower.contains('food') || lower.contains('meal')) return Icons.restaurant_outlined;
-    if (lower.contains('seed') || lower.contains('feed')) return Icons.grass_outlined;
-    if (lower.contains('tool') || lower.contains('equip')) return Icons.build_outlined;
-    if (lower.contains('labor') || lower.contains('wage')) return Icons.person_outline;
-    return Icons.category_outlined;
+  IconData _iconForCategory(String name) => AppIcons.forCategory(name);
+
+  /// Icon shown on each type button in the selector.
+  IconData _iconForType(String type) {
+    switch (type) {
+      case 'expense':
+        return Icons.receipt_long_outlined;
+      case 'payroll':
+        return Icons.payments_outlined;
+      case 'loan':
+        return Icons.pan_tool_outlined;
+      case 'advance':
+        return Icons.pan_tool_alt_outlined;
+      default:
+        return Icons.more_horiz;
+    }
   }
 
   InputDecoration _fieldDecoration({String? hint, bool large = false}) {
     return InputDecoration(
       hintText: hint,
       hintStyle: TextStyle(
-        color: Colors.grey.shade400,
+        color: AppColors.inkMuted.withValues(alpha: 0.8),
         fontSize: large ? 22 : 14,
         fontWeight: large ? FontWeight.w600 : FontWeight.w400,
       ),
       filled: true,
-      fillColor: Colors.white,
+      fillColor: AppColors.surface,
       contentPadding: EdgeInsets.symmetric(
         horizontal: 16,
         vertical: large ? 18 : 14,
       ),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: _borderColor),
+        borderRadius: BorderRadius.circular(AppStyles.radiusField),
+        borderSide: const BorderSide(color: AppColors.hairline),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: _borderColor),
+        borderRadius: BorderRadius.circular(AppStyles.radiusField),
+        borderSide: const BorderSide(color: AppColors.hairline),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFBBBBBB)),
+        borderRadius: BorderRadius.circular(AppStyles.radiusField),
+        borderSide: const BorderSide(
+          color: AppColors.brandGreenLight,
+          width: 1.6,
+        ),
+      ),
+      disabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppStyles.radiusField),
+        borderSide: const BorderSide(color: AppColors.hairline),
       ),
     );
   }
@@ -396,19 +408,14 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F7F5),
       appBar: AppBar(
-        title: Text(
-          _isEditing ? 'Edit transaction' : 'New transaction',
-          style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 18),
-        ),
-        backgroundColor: const Color(0xFFF7F7F5),
-        elevation: 0,
-        scrolledUnderElevation: 0,
+        title: Text(_isEditing ? 'Edit transaction' : 'New transaction'),
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
         children: [
+          _sectionLabel('Type'),
+          const SizedBox(height: 8),
           _typeGrid(),
           const SizedBox(height: 24),
 
@@ -535,22 +542,58 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               );
             }),
             _addCategoryButton(),
-            const SizedBox(height: 16),
-            const Divider(height: 1, color: _borderColor),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Allocated', style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
-                Text(
-                  '\$${_allocatedAmount.toStringAsFixed(2)} of \$${_totalAmount.toStringAsFixed(2)}',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: _allocationMatches ? _allocatedOk : Colors.orange.shade700,
-                  ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 12,
+              ),
+              decoration: BoxDecoration(
+                color: (_allocationMatches ? _allocatedOk : Colors.orange)
+                    .withValues(alpha: 0.09),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: (_allocationMatches ? _allocatedOk : Colors.orange)
+                      .withValues(alpha: 0.25),
                 ),
-              ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        _allocationMatches
+                            ? Icons.check_circle_outline
+                            : Icons.pending_outlined,
+                        size: 17,
+                        color: _allocationMatches
+                            ? _allocatedOk
+                            : Colors.orange.shade800,
+                      ),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Allocated',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.inkSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    '\$${_allocatedAmount.toStringAsFixed(2)} of \$${_totalAmount.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: _allocationMatches
+                          ? _allocatedOk
+                          : Colors.orange.shade800,
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 20),
           ],
@@ -563,33 +606,31 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
           ),
           const SizedBox(height: 24),
 
-          if (_errorMessage != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: Text(_errorMessage!, style: const TextStyle(color: Colors.red, fontSize: 13)),
-            ),
+          if (_errorMessage != null) ...[
+            ErrorNote(_errorMessage!),
+            const SizedBox(height: 16),
+          ],
 
           SizedBox(
             width: double.infinity,
-            height: 52,
+            height: 54,
             child: ElevatedButton(
               onPressed: _saving ? null : _save,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.black,
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: Colors.grey.shade400,
-                elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
               child: _saving
                   ? const SizedBox(
                       width: 22,
                       height: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
                     )
                   : Text(
                       _isEditing ? 'Save changes' : 'Save transaction',
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
             ),
           ),
@@ -598,32 +639,44 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     );
   }
 
-  Widget _sectionLabel(String text) {
-    return Text(text, style: const TextStyle(fontSize: 13, color: _labelColor));
-  }
+  Widget _sectionLabel(String text) => SectionLabel(text.toUpperCase());
 
   Widget _dateField() {
     return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(AppStyles.radiusField),
       child: InkWell(
         onTap: _pickDate,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppStyles.radiusField),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: _borderColor),
+            borderRadius: BorderRadius.circular(AppStyles.radiusField),
+            border: Border.all(color: AppColors.hairline),
           ),
           child: Row(
             children: [
+              const Icon(
+                Icons.calendar_today_outlined,
+                size: 17,
+                color: AppColors.brandGreen,
+              ),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   _dateFormat.format(_selectedDate),
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.ink,
+                  ),
                 ),
               ),
-              Icon(Icons.calendar_today_outlined, size: 18, color: Colors.grey.shade600),
+              const Icon(
+                Icons.keyboard_arrow_down,
+                size: 20,
+                color: AppColors.inkMuted,
+              ),
             ],
           ),
         ),
@@ -656,9 +709,11 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   Widget _typeButton(String type) {
     final selected = type == _selectedType;
     final label = type[0].toUpperCase() + type.substring(1);
+    final color = AppColors.forType(type);
+
     return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
+      color: selected ? color.withValues(alpha: 0.10) : AppColors.surface,
+      borderRadius: BorderRadius.circular(AppStyles.radiusField),
       child: InkWell(
         onTap: () {
           setState(() {
@@ -670,24 +725,38 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             _loadStaffFinancials(_selectedStaffId!);
           }
         },
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          height: 44,
+        borderRadius: BorderRadius.circular(AppStyles.radiusField),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          height: 54,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppStyles.radiusField),
             border: Border.all(
-              color: selected ? const Color(0xFF222222) : _borderColor,
-              width: selected ? 1.5 : 1,
+              color: selected
+                  ? color.withValues(alpha: 0.55)
+                  : AppColors.hairline,
+              width: selected ? 1.6 : 1,
             ),
           ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
-              color: selected ? Colors.black : Colors.grey.shade700,
-            ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                _iconForType(type),
+                size: 18,
+                color: selected ? color : AppColors.inkMuted,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  color: selected ? color : AppColors.inkSecondary,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -712,70 +781,109 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   Widget _manageCategoriesLink() {
     return InkWell(
       onTap: _openManageCategories,
-      child: Text(
-        'Manage categories',
-        style: TextStyle(
-          fontSize: 12,
-          color: Colors.grey.shade600,
-          decoration: TextDecoration.underline,
+      borderRadius: BorderRadius.circular(6),
+      child: const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.tune, size: 13, color: AppColors.brandGreen),
+            SizedBox(width: 4),
+            Text(
+              'Manage',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: AppColors.brandGreen,
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _repayToggle() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+  /// Shared look for the two switch rows (repayment / multiple invoices).
+  Widget _toggleRow({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      padding: const EdgeInsets.fromLTRB(14, 6, 10, 6),
       decoration: BoxDecoration(
-        color: _splitBg,
-        borderRadius: BorderRadius.circular(12),
+        color: color.withValues(alpha: value ? 0.11 : 0.05),
+        borderRadius: BorderRadius.circular(AppStyles.radiusField),
+        border: Border.all(
+          color: color.withValues(alpha: value ? 0.35 : 0.14),
+        ),
       ),
       child: Row(
         children: [
-          const Expanded(
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 10),
+          Expanded(
             child: Text(
-              'This is a repayment',
+              label,
               style: TextStyle(
                 fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: _splitFg,
+                fontWeight: FontWeight.w600,
+                color: color,
               ),
             ),
           ),
           Switch.adaptive(
-            value: _isRepayment,
-            activeTrackColor: _splitFg,
+            value: value,
+            activeTrackColor: color,
             activeThumbColor: Colors.white,
-            onChanged: (value) => setState(() => _isRepayment = value),
+            onChanged: onChanged,
           ),
         ],
       ),
     );
   }
 
-  Widget _payrollInfoField(String label, String value) {
+  Widget _repayToggle() {
+    return _toggleRow(
+      label: 'This is a repayment',
+      icon: Icons.south_west,
+      color: AppColors.cashIn,
+      value: _isRepayment,
+      onChanged: (value) => setState(() => _isRepayment = value),
+    );
+  }
+
+  Widget _payrollInfoField(String label, String value, Color color) {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          color: Colors.grey.shade100,
+          color: color.withValues(alpha: 0.07),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _borderColor),
+          border: Border.all(color: color.withValues(alpha: 0.18)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               label,
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+              style: const TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.inkSecondary,
+              ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 5),
             Text(
               value,
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF444444),
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.3,
+                color: color,
               ),
             ),
           ],
@@ -792,42 +900,72 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
           children: [
             _payrollInfoField(
               'Base salary',
-              _loadingStaffFinancials ? '…' : _currency.format(_staffBaseSalary),
+              _loadingStaffFinancials
+                  ? '…'
+                  : _currency.format(_staffBaseSalary),
+              AppColors.payroll,
             ),
             const SizedBox(width: 10),
             _payrollInfoField(
               'Owed (advance)',
               _loadingStaffFinancials ? '…' : _currency.format(_staffOwed),
+              AppColors.advance,
             ),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 18),
         _sectionLabel('Repay amount (deduct from this salary)'),
         const SizedBox(height: 6),
         TextField(
           controller: _repayAmountController,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: _fieldDecoration(hint: '\$0.00').copyWith(prefixText: '\$ '),
+          decoration: _fieldDecoration(
+            hint: '\$0.00',
+          ).copyWith(prefixText: '\$ '),
           onChanged: (_) => setState(_syncPayrollAmount),
         ),
         const SizedBox(height: 16),
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
           decoration: BoxDecoration(
-            color: const Color(0xFFEAF5EA),
-            borderRadius: BorderRadius.circular(12),
+            gradient: LinearGradient(
+              colors: [
+                AppColors.brandGreenLight.withValues(alpha: 0.13),
+                AppColors.brandGreen.withValues(alpha: 0.07),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(AppStyles.radiusField),
+            border: Border.all(
+              color: AppColors.brandGreen.withValues(alpha: 0.22),
+            ),
           ),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'He will receive',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+              const Icon(
+                Icons.account_balance_wallet_outlined,
+                size: 18,
+                color: AppColors.brandGreen,
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'He will receive',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.brandGreenDeep,
+                  ),
+                ),
               ),
               Text(
                 _currency.format(_payrollNetAmount),
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.4,
+                  color: AppColors.brandGreenDeep,
+                ),
               ),
             ],
           ),
@@ -837,67 +975,73 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   }
 
   Widget _splitToggle() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(
-        color: _splitBg,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          const Expanded(
-            child: Text(
-              'Multiple invoices',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: _splitFg,
-              ),
-            ),
-          ),
-          Switch.adaptive(
-            value: _splitEnabled,
-            activeTrackColor: _splitFg,
-            activeThumbColor: Colors.white,
-            onChanged: (value) => setState(() => _splitEnabled = value),
-          ),
-        ],
-      ),
+    return _toggleRow(
+      label: 'Multiple invoices',
+      icon: Icons.splitscreen_outlined,
+      color: AppColors.loan,
+      value: _splitEnabled,
+      onChanged: (value) => setState(() => _splitEnabled = value),
     );
   }
 
   Widget _categoryRow(int index, _LineItem item) {
     final categoryName = _categoryName(item.categoryId);
+    final hasCategory = categoryName.isNotEmpty;
+    final color = hasCategory
+        ? AppColors.accentFor(categoryName)
+        : AppColors.inkMuted;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _borderColor),
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppStyles.radiusField),
+        border: Border.all(color: AppColors.hairline),
       ),
       child: Row(
         children: [
-          Icon(_iconForCategory(categoryName), size: 20, color: Colors.grey.shade600),
+          IconBadge(
+            icon: _iconForCategory(categoryName),
+            color: color,
+            size: 32,
+            iconSize: 16,
+          ),
           const SizedBox(width: 8),
           Expanded(
             flex: 3,
             child: DropdownButtonFormField<String>(
               initialValue: item.categoryId,
+              isExpanded: true,
               items: _categories
-                  .map((c) => DropdownMenuItem<String>(
-                        value: c['id'] as String,
-                        child: Text(c['name'] as String),
-                      ))
+                  .map(
+                    (c) => DropdownMenuItem<String>(
+                      value: c['id'] as String,
+                      child: Text(
+                        c['name'] as String,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
                   .toList(),
               onChanged: (value) => setState(() => item.categoryId = value),
               decoration: const InputDecoration(
                 hintText: 'Category',
                 border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                filled: false,
                 isDense: true,
                 contentPadding: EdgeInsets.symmetric(vertical: 12),
               ),
-              hint: Text('Category', style: TextStyle(color: Colors.grey.shade400, fontSize: 15)),
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: Colors.black),
+              hint: const Text(
+                'Category',
+                style: TextStyle(color: AppColors.inkMuted, fontSize: 15),
+              ),
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: AppColors.ink,
+              ),
             ),
           ),
           Expanded(
@@ -905,20 +1049,30 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             child: TextField(
               controller: item.amountController,
               textAlign: TextAlign.right,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: const InputDecoration(
                 hintText: '\$0.00',
                 prefixText: '\$ ',
                 border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                filled: false,
                 isDense: true,
                 contentPadding: EdgeInsets.symmetric(vertical: 12),
               ),
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: AppColors.ink,
+              ),
               onChanged: (_) => setState(() {}),
             ),
           ),
           IconButton(
-            icon: Icon(Icons.close, size: 18, color: Colors.grey.shade500),
+            icon: const Icon(Icons.close, size: 17),
+            color: AppColors.inkMuted,
             visualDensity: VisualDensity.compact,
             onPressed: _items.length > 1 ? () => _removeItem(index) : null,
           ),
@@ -932,23 +1086,30 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       color: Colors.transparent,
       child: InkWell(
         onTap: _addItem,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppStyles.radiusField),
         child: CustomPaint(
           painter: _DashedBorderPainter(
-            color: Colors.grey.shade300,
-            radius: 12,
+            color: AppColors.loan.withValues(alpha: 0.4),
+            radius: AppStyles.radiusField,
           ),
           child: Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 14),
             alignment: Alignment.center,
-            child: Text(
-              '+ Add invoice',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: Colors.grey.shade600,
-              ),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.add, size: 17, color: AppColors.loan),
+                SizedBox(width: 6),
+                Text(
+                  'Add invoice',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.loan,
+                  ),
+                ),
+              ],
             ),
           ),
         ),

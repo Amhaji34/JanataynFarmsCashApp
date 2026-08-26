@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'screens/login_screen.dart';
+import 'screens/auth_gate.dart';
+import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -9,6 +10,10 @@ Future<void> main() async {
   await Supabase.initialize(
     url: 'https://jgxqvhryinoulpztprwz.supabase.co',
     publishableKey: 'sb_publishable_mZxZOdYrNt9fBmuA9V7w2Q_yxDxiPrJ',
+    // Keeps the session alive across app restarts: the refresh token is
+    // persisted locally and used silently, so once logged in, a partner
+    // stays logged in instead of landing back on the login screen.
+    authOptions: const FlutterAuthClientOptions(autoRefreshToken: true),
   );
 
   runApp(const MyApp());
@@ -40,11 +45,8 @@ class MyApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      theme: ThemeData(
-        primarySwatch: Colors.green,
-        useMaterial3: true,
-      ),
-      home: const LoginScreen(),
+      theme: AppTheme.light,
+      home: const AuthGate(),
     );
   }
 }

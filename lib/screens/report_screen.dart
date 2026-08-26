@@ -2,6 +2,8 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../main.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_ui.dart';
 
 class ReportScreen extends StatefulWidget {
   const ReportScreen({super.key});
@@ -12,8 +14,6 @@ class ReportScreen extends StatefulWidget {
 
 class _ReportScreenState extends State<ReportScreen> {
   static const _accounts = ['Payroll', 'Advances', 'Loans', 'Expenses'];
-
-  static const _borderColor = Color(0xFFE5E5E5);
 
   String _selectedAccount = 'Payroll';
 
@@ -244,19 +244,39 @@ class _ReportScreenState extends State<ReportScreen> {
 
   Color _rowColor(Map<String, dynamic> t) {
     final type = t['type'] as String;
-    if (type == 'advance_deduction') return Colors.grey;
-    if (type == 'loan_repayment') return Colors.green;
+    if (type == 'advance_deduction') return AppColors.neutral;
+    if (type == 'loan_repayment') return AppColors.cashIn;
+    return _accountColor;
+  }
+
+  /// The accent color for the currently selected account tab.
+  Color get _accountColor {
     switch (_selectedAccount) {
       case 'Payroll':
-        return Colors.orange;
+        return AppColors.payroll;
       case 'Advances':
-        return Colors.purple;
+        return AppColors.advance;
       case 'Loans':
-        return Colors.blue;
+        return AppColors.loan;
       case 'Expenses':
-        return Colors.red;
+        return AppColors.expense;
       default:
-        return Colors.grey;
+        return AppColors.neutral;
+    }
+  }
+
+  IconData get _accountIcon {
+    switch (_selectedAccount) {
+      case 'Payroll':
+        return Icons.payments_outlined;
+      case 'Advances':
+        return Icons.pan_tool_alt_outlined;
+      case 'Loans':
+        return Icons.pan_tool_outlined;
+      case 'Expenses':
+        return Icons.receipt_long_outlined;
+      default:
+        return Icons.more_horiz;
     }
   }
 
@@ -277,37 +297,73 @@ class _ReportScreenState extends State<ReportScreen> {
     return InputDecoration(
       hintText: hint,
       filled: true,
-      fillColor: Colors.white,
+      fillColor: AppColors.surface,
       isDense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: _borderColor),
+        borderRadius: BorderRadius.circular(AppStyles.radiusField),
+        borderSide: const BorderSide(color: AppColors.hairline),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: _borderColor),
+        borderRadius: BorderRadius.circular(AppStyles.radiusField),
+        borderSide: const BorderSide(color: AppColors.hairline),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppStyles.radiusField),
+        borderSide: const BorderSide(
+          color: AppColors.brandGreenLight,
+          width: 1.6,
+        ),
       ),
     );
   }
 
-  Widget _chartCard({required String title, required Widget chart}) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
+  Widget _chartCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Widget chart,
+  }) {
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          Row(
+            children: [
+              IconBadge(
+                icon: icon,
+                color: AppColors.expense,
+                size: 34,
+                iconSize: 17,
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.ink,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: AppColors.inkMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           SizedBox(height: 180, child: chart),
         ],
       ),
@@ -317,25 +373,38 @@ class _ReportScreenState extends State<ReportScreen> {
   Widget _barChart(List<MapEntry<String, double>> data) {
     if (data.isEmpty) {
       return const Center(
-        child: Text('No data.', style: TextStyle(color: Colors.grey)),
+        child: Text(
+          'No data for this range.',
+          style: TextStyle(color: AppColors.inkMuted, fontSize: 13),
+        ),
       );
     }
     final maxValue = data.map((e) => e.value).reduce((a, b) => a > b ? a : b);
 
     return BarChart(
       BarChartData(
-        maxY: maxValue == 0 ? 1 : maxValue * 1.2,
+        maxY: maxValue == 0 ? 1 : maxValue * 1.22,
         alignment: BarChartAlignment.spaceAround,
-        gridData: const FlGridData(show: false),
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          horizontalInterval: maxValue == 0 ? 1 : maxValue / 2,
+          getDrawingHorizontalLine: (value) => const FlLine(
+            color: AppColors.hairline,
+            strokeWidth: 1,
+            dashArray: [4, 4],
+          ),
+        ),
         borderData: FlBorderData(show: false),
         barTouchData: BarTouchData(
           touchTooltipData: BarTouchTooltipData(
+            getTooltipColor: (_) => AppColors.ink,
             getTooltipItem: (group, groupIndex, rod, rodIndex) => BarTooltipItem(
               _currency.format(rod.toY),
               const TextStyle(
                 color: Colors.white,
                 fontSize: 12,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
@@ -353,15 +422,20 @@ class _ReportScreenState extends State<ReportScreen> {
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 28,
+              reservedSize: 30,
               getTitlesWidget: (value, meta) {
                 final index = value.toInt();
                 if (index < 0 || index >= data.length) return const SizedBox();
                 return Padding(
-                  padding: const EdgeInsets.only(top: 6),
+                  padding: const EdgeInsets.only(top: 8),
                   child: Text(
                     data[index].key,
-                    style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.inkMuted,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 );
               },
@@ -375,10 +449,19 @@ class _ReportScreenState extends State<ReportScreen> {
               barRods: [
                 BarChartRodData(
                   toY: data[i].value,
-                  color: _expenseChartColor,
-                  width: 18,
+                  // Single hue: this is a magnitude comparison, not identity,
+                  // so bars share the expense red rather than a rainbow.
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [
+                      _expenseChartColor.withValues(alpha: 0.72),
+                      _expenseChartColor,
+                    ],
+                  ),
+                  width: 20,
                   borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(4),
+                    top: Radius.circular(5),
                   ),
                 ),
               ],
@@ -394,37 +477,34 @@ class _ReportScreenState extends State<ReportScreen> {
     final summary = _summary;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F7F5),
-      appBar: AppBar(
-        title: const Text('Reports'),
-        backgroundColor: const Color(0xFFF7F7F5),
-        elevation: 0,
-      ),
+      appBar: AppBar(title: const Text('Reports')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
-          ? Center(
-              child: Text(
-                _errorMessage!,
-                style: const TextStyle(color: Colors.red),
-              ),
+          ? Padding(
+              padding: const EdgeInsets.all(20),
+              child: Center(child: ErrorNote(_errorMessage!)),
             )
           : Column(
               children: [
-                // Account type chips
+                // Account type chips, each tinted with its own accent
                 SizedBox(
-                  height: 44,
+                  height: 40,
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 6,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
                     itemCount: _accounts.length,
                     separatorBuilder: (_, _) => const SizedBox(width: 8),
                     itemBuilder: (context, index) {
                       final account = _accounts[index];
                       final selected = account == _selectedAccount;
+                      final chipColor = switch (account) {
+                        'Payroll' => AppColors.payroll,
+                        'Advances' => AppColors.advance,
+                        'Loans' => AppColors.loan,
+                        'Expenses' => AppColors.expense,
+                        _ => AppColors.neutral,
+                      };
                       return ChoiceChip(
                         label: Text(account),
                         selected: selected,
@@ -434,10 +514,27 @@ class _ReportScreenState extends State<ReportScreen> {
                           _selectedPartnerId = null;
                           _selectedCategoryName = null;
                         }),
+                        selectedColor: chipColor,
+                        backgroundColor: AppColors.surface,
+                        side: BorderSide(
+                          color: selected ? chipColor : AppColors.hairline,
+                        ),
+                        labelStyle: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: selected
+                              ? Colors.white
+                              : AppColors.inkSecondary,
+                        ),
+                        showCheckmark: false,
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize:
+                            MaterialTapTargetSize.shrinkWrap,
                       );
                     },
                   ),
                 ),
+                const SizedBox(height: 12),
 
                 // Filters
                 Padding(
@@ -502,17 +599,37 @@ class _ReportScreenState extends State<ReportScreen> {
                       const SizedBox(width: 10),
                       OutlinedButton.icon(
                         onPressed: _pickDateRange,
-                        icon: const Icon(Icons.calendar_today_outlined, size: 15),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _dateRange == null
+                              ? AppColors.inkSecondary
+                              : AppColors.brandGreen,
+                          backgroundColor: _dateRange == null
+                              ? AppColors.surface
+                              : AppColors.brandGreen.withValues(alpha: 0.08),
+                          side: BorderSide(
+                            color: _dateRange == null
+                                ? AppColors.hairline
+                                : AppColors.brandGreen.withValues(alpha: 0.35),
+                          ),
+                        ),
+                        icon: const Icon(
+                          Icons.calendar_today_outlined,
+                          size: 15,
+                        ),
                         label: Text(
                           _dateRange == null
                               ? 'Date'
                               : '${_dateFormat.format(_dateRange!.start)} - ${_dateFormat.format(_dateRange!.end)}',
-                          style: const TextStyle(fontSize: 13),
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                       if (_dateRange != null)
                         IconButton(
                           icon: const Icon(Icons.close, size: 18),
+                          color: AppColors.inkMuted,
                           onPressed: () => setState(() => _dateRange = null),
                         ),
                     ],
@@ -521,70 +638,90 @@ class _ReportScreenState extends State<ReportScreen> {
 
                 // Summary cards
                 SizedBox(
-                  height: 74,
+                  height: 82,
                   child: ListView(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    children: summary.entries
-                        .map(
-                          (e) => Container(
-                            width: 130,
-                            margin: const EdgeInsets.only(right: 8),
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: Colors.grey.shade200),
+                    children: summary.entries.map((e) {
+                      // "Outstanding" is the headline number — give it the
+                      // account's accent; supporting figures stay neutral.
+                      final isHeadline =
+                          e.key == 'Outstanding' ||
+                          e.key.startsWith('Total');
+                      final color = isHeadline
+                          ? _accountColor
+                          : AppColors.inkSecondary;
+                      return Container(
+                        width: 138,
+                        margin: const EdgeInsets.only(right: 10),
+                        padding: const EdgeInsets.all(12),
+                        decoration: isHeadline
+                            ? AppStyles.accentCard(_accountColor)
+                            : AppStyles.card,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              e.key,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.inkSecondary,
+                              ),
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  e.key,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  _currency.format(e.value),
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
+                            const SizedBox(height: 7),
+                            Text(
+                              _currency.format(e.value),
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -0.3,
+                                color: color,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
-                          ),
-                        )
-                        .toList(),
+                          ],
+                        ),
+                      );
+                    }).toList(),
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
 
                 Expanded(
                   child: _selectedAccount == 'Expenses'
                       ? ListView(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
                           children: [
                             _chartCard(
                               title: 'Spending by category',
+                              subtitle: 'Top categories in this range',
+                              icon: Icons.pie_chart_outline,
                               chart: _barChart(_categoryChartData),
                             ),
                             const SizedBox(height: 12),
                             _chartCard(
                               title: 'Spending by month',
+                              subtitle: 'Last 6 months with activity',
+                              icon: Icons.show_chart,
                               chart: _barChart(_monthlyChartData),
                             ),
                           ],
                         )
                       : filtered.isEmpty
-                      ? const Center(child: Text('No transactions found.'))
-                      : ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                      ? EmptyState(
+                          icon: _accountIcon,
+                          title: 'Nothing to report yet',
+                          subtitle:
+                              'No $_selectedAccount records match these '
+                              'filters.',
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
                           itemCount: filtered.length,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: 10),
                           itemBuilder: (context, index) {
                             final t = filtered[index];
                             final type = t['type'] as String;
@@ -596,18 +733,23 @@ class _ReportScreenState extends State<ReportScreen> {
                             final isIn = _isCashIn(type);
                             final isNeutral = _isNeutral(type);
 
-                            return Container(
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                              decoration: BoxDecoration(
-                                border: Border(
-                                  bottom: BorderSide(
-                                    color: Colors.grey.shade200,
-                                  ),
-                                ),
+                            return AppCard(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
                               ),
                               child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
+                                  IconBadge(
+                                    icon: isIn
+                                        ? Icons.south_west
+                                        : isNeutral
+                                        ? Icons.sync_alt
+                                        : _accountIcon,
+                                    color: color,
+                                  ),
+                                  const SizedBox(width: 12),
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment:
@@ -615,14 +757,18 @@ class _ReportScreenState extends State<ReportScreen> {
                                       children: [
                                         Text(
                                           _rowTitle(t),
-                                          style: const TextStyle(fontSize: 14),
+                                          style: const TextStyle(
+                                            fontSize: 14.5,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppColors.ink,
+                                          ),
                                         ),
-                                        const SizedBox(height: 2),
+                                        const SizedBox(height: 3),
                                         Text(
                                           _dateFormat.format(date),
-                                          style: TextStyle(
+                                          style: const TextStyle(
                                             fontSize: 12,
-                                            color: Colors.grey[500],
+                                            color: AppColors.inkMuted,
                                           ),
                                         ),
                                       ],
@@ -633,10 +779,11 @@ class _ReportScreenState extends State<ReportScreen> {
                                         ? _currency.format(amount)
                                         : '${isIn ? '+' : '-'}${_currency.format(amount)}',
                                     style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: -0.2,
                                       color: isNeutral
-                                          ? Colors.grey[600]
+                                          ? AppColors.inkMuted
                                           : color,
                                     ),
                                   ),
