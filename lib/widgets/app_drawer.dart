@@ -190,8 +190,8 @@ class AppDrawer extends StatelessWidget {
                   ),
                   _navTile(
                     context: context,
-                    icon: Icons.settings_outlined,
-                    label: 'Settings',
+                    icon: Icons.account_balance_outlined,
+                    label: 'Accounts',
                     color: AppColors.neutral,
                     destination: const SettingsScreen(),
                   ),

@@ -30,11 +30,13 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
   double _cashOnHand = 0;
   double _outstandingLoans = 0;
   double _outstandingAdvances = 0;
-  double _totalExpenses = 0;
+  double _owedByCustomers = 0;
   double _monthExpenses = 0;
   double _monthBills = 0;
   double _monthPayroll = 0;
   double _monthAdvancesGiven = 0;
+  double _monthRevenue = 0;
+  double _monthHarvestValue = 0;
 
   @override
   void initState() {
@@ -103,12 +105,33 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
       // 3. All transactions (fine for small volume; we'll optimize later if needed)
       final txns = await supabase.from('transactions').select();
 
+      // 4. Harvests + customer payments -> owed by customers, this month's
+      // harvest sales value.
+      final harvests = await supabase
+          .from('harvests')
+          .select('kg_harvested, price_per_kg, harvest_date');
+      final customerPayments = await supabase
+          .from('customer_payments')
+          .select('amount');
+
+      // 5. Revenue account fund_add rows -> this month's revenue collected
+      // (includes harvest sale payments; see customer_payments service).
+      final revenueAccount = await supabase
+          .from('accounts')
+          .select()
+          .eq('name', 'Revenue')
+          .single();
+      final revenueAdds = await supabase
+          .from('account_transactions')
+          .select('amount, transaction_date')
+          .eq('account_id', revenueAccount['id'])
+          .eq('type', 'fund_add');
+
       double cash = opening + pettyCashTransfersIn;
       double loansOut = 0;
       double loansRepaid = 0;
       double advancesOut = 0;
       double advancesCleared = 0;
-      double totalExpenses = 0;
       double monthExpenses = 0;
 
       final now = DateTime.now();
@@ -125,7 +148,6 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
         switch (type) {
           case 'expense':
             cash -= amount;
-            totalExpenses += amount;
             if (isThisMonth) {
               monthBills += amount;
               monthExpenses += amount;
@@ -133,7 +155,6 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
             break;
           case 'payroll':
             cash -= amount;
-            totalExpenses += amount;
             if (isThisMonth) {
               monthPayroll += amount;
               monthExpenses += amount;
@@ -158,16 +179,43 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
         }
       }
 
+      double harvestTotalValue = 0;
+      double monthHarvestValue = 0;
+      for (final h in harvests) {
+        final value =
+            (h['kg_harvested'] as num).toDouble() *
+            (h['price_per_kg'] as num).toDouble();
+        harvestTotalValue += value;
+        final date = DateTime.parse(h['harvest_date'] as String);
+        if (date.year == now.year && date.month == now.month) {
+          monthHarvestValue += value;
+        }
+      }
+      double totalPaidByCustomers = 0;
+      for (final p in customerPayments) {
+        totalPaidByCustomers += (p['amount'] as num).toDouble();
+      }
+
+      double monthRevenue = 0;
+      for (final r in revenueAdds) {
+        final date = DateTime.parse(r['transaction_date'] as String);
+        if (date.year == now.year && date.month == now.month) {
+          monthRevenue += (r['amount'] as num).toDouble();
+        }
+      }
+
       if (!mounted) return;
       setState(() {
         _cashOnHand = cash;
         _outstandingLoans = loansOut - loansRepaid;
         _outstandingAdvances = advancesOut - advancesCleared;
-        _totalExpenses = totalExpenses;
+        _owedByCustomers = harvestTotalValue - totalPaidByCustomers;
         _monthExpenses = monthExpenses;
         _monthBills = monthBills;
         _monthPayroll = monthPayroll;
         _monthAdvancesGiven = monthAdvances;
+        _monthRevenue = monthRevenue;
+        _monthHarvestValue = monthHarvestValue;
         _loading = false;
       });
     } catch (e) {
@@ -206,9 +254,7 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
       floatingActionButton: _role == 'admin'
           ? FloatingActionButton.extended(
               onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const AddTransactionScreen(),
-                ),
+                MaterialPageRoute(builder: (_) => const AddTransactionScreen()),
               ),
               icon: const Icon(Icons.add, size: 22),
               label: const Text(
@@ -224,141 +270,159 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
               padding: const EdgeInsets.all(20),
               child: Center(child: ErrorNote(_errorMessage!)),
             )
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
-              children: [
-                _greeting(),
-                const SizedBox(height: 16),
-                _cashHeroCard(),
-                const SizedBox(height: 14),
+          : RefreshIndicator(
+              onRefresh: _loadEverything,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
+                children: [
+                  _greeting(),
+                  const SizedBox(height: 16),
+                  _cashHeroCard(),
+                  const SizedBox(height: 14),
 
-                Row(
-                  children: [
-                    Expanded(
-                      child: StatTile(
-                        icon: Icons.handshake_outlined,
-                        label: 'Owed by partners',
-                        value: _formatCurrency(_outstandingLoans),
-                        color: AppColors.loan,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: StatTile(
-                        icon: Icons.person_outline,
-                        label: 'Owed by staff',
-                        value: _formatCurrency(_outstandingAdvances),
-                        color: AppColors.advance,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: StatTile(
-                        icon: Icons.trending_down_outlined,
-                        label: 'Total expenses',
-                        value: _formatCurrency(_totalExpenses),
-                        color: AppColors.expense,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: StatTile(
-                        icon: Icons.calendar_month_outlined,
-                        label: 'This month\'s expenses',
-                        value: _formatCurrency(_monthExpenses),
-                        color: AppColors.brandNavy,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-
-                SectionLabel(
-                  'THIS MONTH',
-                  trailing: Text(
-                    DateFormat('MMMM yyyy').format(DateTime.now()),
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.inkMuted,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                AppCard(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 4,
-                  ),
-                  child: Column(
+                  Row(
                     children: [
-                      _monthRow(
-                        Icons.receipt_long_outlined,
-                        'Expenses',
-                        _monthBills,
-                        AppColors.expense,
-                      ),
-                      const Divider(height: 1),
-                      _monthRow(
-                        Icons.payments_outlined,
-                        'Payroll',
-                        _monthPayroll,
-                        AppColors.payroll,
-                      ),
-                      const Divider(height: 1),
-                      _monthRow(
-                        Icons.back_hand_outlined,
-                        'Advances',
-                        _monthAdvancesGiven,
-                        AppColors.advance,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                AppCard(
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const TransactionLogScreen(),
-                    ),
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                  child: Row(
-                    children: [
-                      const IconBadge(
-                        icon: Icons.list_alt_outlined,
-                        color: AppColors.brandGreenLight,
-                        size: 34,
-                        iconSize: 17,
-                      ),
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: Text(
-                          'View all transactions',
-                          style: TextStyle(
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.ink,
-                          ),
+                      Expanded(
+                        child: StatTile(
+                          icon: Icons.handshake_outlined,
+                          label: 'Owed by partners',
+                          value: _formatCurrency(_outstandingLoans),
+                          color: AppColors.loan,
                         ),
                       ),
-                      Icon(
-                        Icons.arrow_forward_ios,
-                        size: 14,
-                        color: AppColors.inkMuted.withValues(alpha: 0.7),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: StatTile(
+                          icon: Icons.person_outline,
+                          label: 'Owed by staff',
+                          value: _formatCurrency(_outstandingAdvances),
+                          color: AppColors.advance,
+                        ),
                       ),
                     ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: StatTile(
+                          icon: Icons.groups_outlined,
+                          label: 'Owed by customers',
+                          value: _formatCurrency(_owedByCustomers),
+                          color: AppColors.brandGreenLight,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: StatTile(
+                          icon: Icons.calendar_month_outlined,
+                          label: 'This month\'s expenses',
+                          value: _formatCurrency(_monthExpenses),
+                          color: AppColors.brandNavy,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  SectionLabel(
+                    'THIS MONTH',
+                    trailing: Text(
+                      DateFormat('MMMM yyyy').format(DateTime.now()),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.inkMuted,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  AppCard(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 4,
+                    ),
+                    child: Column(
+                      children: [
+                        _monthRow(
+                          Icons.receipt_long_outlined,
+                          'Expenses',
+                          _monthBills,
+                          AppColors.expense,
+                        ),
+                        const Divider(height: 1),
+                        _monthRow(
+                          Icons.payments_outlined,
+                          'Payroll',
+                          _monthPayroll,
+                          AppColors.payroll,
+                        ),
+                        const Divider(height: 1),
+                        _monthRow(
+                          Icons.back_hand_outlined,
+                          'Advances',
+                          _monthAdvancesGiven,
+                          AppColors.advance,
+                        ),
+                        const Divider(height: 1),
+                        _monthRow(
+                          Icons.attach_money,
+                          'Revenue',
+                          _monthRevenue,
+                          AppColors.cashIn,
+                        ),
+                        const Divider(height: 1),
+                        _monthRow(
+                          Icons.eco_outlined,
+                          'Harvest',
+                          _monthHarvestValue,
+                          AppColors.brandGreenLight,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  AppCard(
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const TransactionLogScreen(),
+                      ),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                    child: Row(
+                      children: [
+                        const IconBadge(
+                          icon: Icons.list_alt_outlined,
+                          color: AppColors.brandGreenLight,
+                          size: 34,
+                          iconSize: 17,
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Text(
+                            'View all transactions',
+                            style: TextStyle(
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.ink,
+                            ),
+                          ),
+                        ),
+                        Icon(
+                          Icons.arrow_forward_ios,
+                          size: 14,
+                          color: AppColors.inkMuted.withValues(alpha: 0.7),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
     );
   }

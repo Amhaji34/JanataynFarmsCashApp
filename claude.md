@@ -430,10 +430,16 @@ lib/
 │                                     + Log out (read-only, so viewers see
 │                                     them too); shows "Run Payroll" plus a
 │                                     "MANAGE" section (Expense categories,
-│                                     Staff, Partners, Settings) for
+│                                     Staff, Partners, Accounts) for
 │                                     admins only. Also always shows
 │                                     Harvests + Customers (read-only for
 │                                     viewers, same as Transactions/Reports).
+│                                     "Accounts" navigates to
+│                                     settings_screen.dart — the nav label
+│                                     was renamed from "Settings" since
+│                                     that screen is entirely about the 4
+│                                     funding accounts now (see the
+│                                     settings_screen.dart entry below).
 ├── services/
 │   └── customer_payments.dart     — `recordCustomerPayment()`, the shared
 │                                     function used by both
@@ -455,11 +461,18 @@ lib/
 │   │                                 @janatayn.local internally)
 │   ├── dashboard_screen.dart      — main screen after login. Fetches
 │   │                                 profile (name/role) + all
-│   │                                 transactions, computes cash on hand,
-│   │                                 outstanding loans/advances, and
-│   │                                 this-month totals. FAB to add a
-│   │                                 transaction (admin only); drawer for
-│   │                                 navigation to everything else.
+│   │                                 transactions, harvests, customer
+│   │                                 payments, and Revenue account
+│   │                                 fund_add rows; computes cash on
+│   │                                 hand, outstanding loans/advances,
+│   │                                 owed-by-customers, and this-month
+│   │                                 totals (including revenue collected
+│   │                                 and harvest sales value). Pull to
+│   │                                 refresh (`RefreshIndicator` around
+│   │                                 the body) re-runs the same load.
+│   │                                 FAB to add a transaction (admin
+│   │                                 only); drawer for navigation to
+│   │                                 everything else.
 │   ├── add_transaction_screen.dart — type selector (expense/loan/advance
 │   │                                 — no payroll, see payroll_screen.dart),
 │   │                                 partner/staff dropdown when relevant,
