@@ -4,10 +4,12 @@ import '../main.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_ui.dart';
 
-/// Transfers funds from one of Investment/Loans/Revenue into Petty Cash —
-/// the only path by which Petty Cash ever gets funded. Records two ledger
-/// rows: a transfer_out on the source account and a transfer_in on Petty
-/// Cash, so each account's history reads correctly on its own.
+enum _Direction { toPettyCash, fromPettyCash }
+
+/// Transfers funds between Petty Cash and the three fundable accounts
+/// (Investment, Loans, Revenue), in either direction. Records two ledger
+/// rows: a transfer_out on the source account and a transfer_in on the
+/// destination, so each account's history reads correctly on its own.
 class TransferFundsScreen extends StatefulWidget {
   const TransferFundsScreen({super.key});
 
@@ -16,12 +18,15 @@ class TransferFundsScreen extends StatefulWidget {
 }
 
 class _TransferFundsScreenState extends State<TransferFundsScreen> {
-  static const _sourceAccounts = ['Investment', 'Loans', 'Revenue'];
+  static const _fundableAccounts = ['Investment', 'Loans', 'Revenue'];
+
+  _Direction _direction = _Direction.toPettyCash;
 
   bool _loadingAccounts = true;
   String? _loadError;
-  List<Map<String, dynamic>> _accounts = [];
+  List<Map<String, dynamic>> _fundableAccountRows = [];
   Map<String, double> _balances = {};
+  double _pettyCashBalance = 0;
   String? _pettyCashId;
   String? _selectedAccountId;
 
@@ -56,21 +61,23 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
       final pettyCash = allAccounts.firstWhere(
         (a) => a['name'] == 'Petty Cash',
       );
+      final pettyCashId = pettyCash['id'] as String;
 
       final ledgerData = await supabase.from('account_transactions').select();
       final ledger = List<Map<String, dynamic>>.from(ledgerData);
 
-      final sources = allAccounts
-          .where((a) => _sourceAccounts.contains(a['name']))
-          .toList()
-        ..sort(
-          (a, b) => _sourceAccounts
-              .indexOf(a['name'] as String)
-              .compareTo(_sourceAccounts.indexOf(b['name'] as String)),
-        );
+      final fundable =
+          allAccounts
+              .where((a) => _fundableAccounts.contains(a['name']))
+              .toList()
+            ..sort(
+              (a, b) => _fundableAccounts
+                  .indexOf(a['name'] as String)
+                  .compareTo(_fundableAccounts.indexOf(b['name'] as String)),
+            );
 
       final balances = <String, double>{};
-      for (final account in sources) {
+      for (final account in fundable) {
         final id = account['id'] as String;
         double balance = 0;
         for (final t in ledger) {
@@ -85,10 +92,45 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
         balances[id] = balance;
       }
 
+      // Petty Cash's balance also folds in the main transactions ledger
+      // (expenses/payroll/loans/advances/repayments) and the opening
+      // balance - same formula as the dashboard and account history screen.
+      final settingsRow = await supabase
+          .from('settings')
+          .select()
+          .eq('key', 'opening_balance')
+          .single();
+      double pettyCashBalance = (settingsRow['value'] as num).toDouble();
+      for (final t in ledger) {
+        if (t['account_id'] != pettyCashId) continue;
+        final amount = (t['amount'] as num).toDouble();
+        if (t['type'] == 'transfer_in') {
+          pettyCashBalance += amount;
+        } else if (t['type'] == 'transfer_out') {
+          pettyCashBalance -= amount;
+        }
+      }
+      final txnsData = await supabase.from('transactions').select();
+      for (final t in List<Map<String, dynamic>>.from(txnsData)) {
+        final amount = (t['amount'] as num).toDouble();
+        switch (t['type'] as String) {
+          case 'expense':
+          case 'payroll':
+          case 'loan':
+          case 'advance':
+            pettyCashBalance -= amount;
+            break;
+          case 'loan_repayment':
+            pettyCashBalance += amount;
+            break;
+        }
+      }
+
       setState(() {
-        _accounts = sources;
+        _fundableAccountRows = fundable;
         _balances = balances;
-        _pettyCashId = pettyCash['id'] as String;
+        _pettyCashBalance = pettyCashBalance;
+        _pettyCashId = pettyCashId;
         _loadingAccounts = false;
       });
     } catch (e) {
@@ -97,6 +139,14 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
         _loadingAccounts = false;
       });
     }
+  }
+
+  void _setDirection(_Direction direction) {
+    setState(() {
+      _direction = direction;
+      _selectedAccountId = null;
+      _errorMessage = null;
+    });
   }
 
   Future<void> _pickDate() async {
@@ -113,7 +163,11 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
     setState(() => _errorMessage = null);
 
     if (_selectedAccountId == null) {
-      setState(() => _errorMessage = 'Select an account to transfer from.');
+      setState(
+        () => _errorMessage = _direction == _Direction.toPettyCash
+            ? 'Select an account to transfer from.'
+            : 'Select an account to transfer to.',
+      );
       return;
     }
     final amount = double.tryParse(_amountController.text) ?? 0;
@@ -121,7 +175,10 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
       setState(() => _errorMessage = 'Enter an amount greater than zero.');
       return;
     }
-    final available = _balances[_selectedAccountId] ?? 0;
+
+    final available = _direction == _Direction.toPettyCash
+        ? (_balances[_selectedAccountId] ?? 0)
+        : _pettyCashBalance;
     if (amount > available + 0.01) {
       setState(
         () => _errorMessage =
@@ -130,6 +187,13 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
       return;
     }
 
+    final sourceId = _direction == _Direction.toPettyCash
+        ? _selectedAccountId!
+        : _pettyCashId!;
+    final destId = _direction == _Direction.toPettyCash
+        ? _pettyCashId!
+        : _selectedAccountId!;
+
     setState(() => _saving = true);
     try {
       final date = _dbDateFormat.format(_selectedDate);
@@ -137,18 +201,18 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
 
       await supabase.from('account_transactions').insert([
         {
-          'account_id': _selectedAccountId,
+          'account_id': sourceId,
           'type': 'transfer_out',
           'amount': amount,
-          'related_account_id': _pettyCashId,
+          'related_account_id': destId,
           'transaction_date': date,
           'note': note,
         },
         {
-          'account_id': _pettyCashId,
+          'account_id': destId,
           'type': 'transfer_in',
           'amount': amount,
-          'related_account_id': _selectedAccountId,
+          'related_account_id': sourceId,
           'transaction_date': date,
           'note': note,
         },
@@ -161,10 +225,181 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
     }
   }
 
+  Widget _directionToggle() {
+    return Row(
+      children: [
+        Expanded(
+          child: _directionButton(
+            label: 'To Petty Cash',
+            icon: Icons.call_received,
+            selected: _direction == _Direction.toPettyCash,
+            onTap: () => _setDirection(_Direction.toPettyCash),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _directionButton(
+            label: 'From Petty Cash',
+            icon: Icons.call_made,
+            selected: _direction == _Direction.fromPettyCash,
+            onTap: () => _setDirection(_Direction.fromPettyCash),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _directionButton({
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: selected
+          ? AppColors.brandGreen.withValues(alpha: 0.10)
+          : AppColors.surface,
+      borderRadius: BorderRadius.circular(AppStyles.radiusField),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppStyles.radiusField),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 13),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppStyles.radiusField),
+            border: Border.all(
+              color: selected
+                  ? AppColors.brandGreen.withValues(alpha: 0.4)
+                  : AppColors.hairline,
+            ),
+          ),
+          child: Column(
+            children: [
+              Icon(
+                icon,
+                size: 18,
+                color: selected ? AppColors.brandGreen : AppColors.inkMuted,
+              ),
+              const SizedBox(height: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? AppColors.brandGreenDeep : AppColors.ink,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _pettyCashFixedCard({required bool isSource}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.brandGreen.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.brandGreen.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isSource ? Icons.arrow_upward : Icons.arrow_downward,
+            size: 16,
+            color: AppColors.brandGreen,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '${isSource ? 'From' : 'Into'}: Petty Cash',
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
+                color: AppColors.brandGreenDeep,
+              ),
+            ),
+          ),
+          Text(
+            '${_currency.format(_pettyCashBalance)} available',
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.brandGreenDeep,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _accountList() {
+    return Column(
+      children: _fundableAccountRows.map((a) {
+        final id = a['id'] as String;
+        final name = a['name'] as String;
+        final selected = id == _selectedAccountId;
+        final color = AppColors.accentFor(name);
+        final balance = _balances[id] ?? 0;
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: AppCard(
+            accent: selected ? color : null,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            onTap: () => setState(() => _selectedAccountId = id),
+            child: Row(
+              children: [
+                IconBadge(icon: Icons.account_balance_outlined, color: color),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.ink,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${_currency.format(balance)} available',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.inkMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  selected
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  size: 20,
+                  color: selected ? color : AppColors.inkMuted,
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final toPetty = _direction == _Direction.toPettyCash;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Transfer to Petty Cash')),
+      appBar: AppBar(
+        title: Text(
+          toPetty ? 'Transfer to Petty Cash' : 'Transfer from Petty Cash',
+        ),
+      ),
       body: _loadingAccounts
           ? const Center(child: CircularProgressIndicator())
           : _loadError != null
@@ -175,98 +410,24 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
               children: [
+                _directionToggle(),
+                const SizedBox(height: 20),
+
                 const SectionLabel('TRANSFER FROM'),
                 const SizedBox(height: 8),
-                ..._accounts.map((a) {
-                  final id = a['id'] as String;
-                  final name = a['name'] as String;
-                  final selected = id == _selectedAccountId;
-                  final color = AppColors.accentFor(name);
-                  final balance = _balances[id] ?? 0;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: AppCard(
-                      accent: selected ? color : null,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 12,
-                      ),
-                      onTap: () => setState(() => _selectedAccountId = id),
-                      child: Row(
-                        children: [
-                          IconBadge(
-                            icon: Icons.account_balance_outlined,
-                            color: color,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  name,
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.ink,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  '${_currency.format(balance)} available',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: AppColors.inkMuted,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Icon(
-                            selected
-                                ? Icons.radio_button_checked
-                                : Icons.radio_button_unchecked,
-                            size: 20,
-                            color: selected ? color : AppColors.inkMuted,
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.brandGreen.withValues(alpha: 0.07),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: AppColors.brandGreen.withValues(alpha: 0.2),
-                    ),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(
-                        Icons.arrow_downward,
-                        size: 16,
-                        color: AppColors.brandGreen,
-                      ),
-                      SizedBox(width: 8),
-                      Text(
-                        'Into: Petty Cash',
-                        style: TextStyle(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.brandGreenDeep,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                if (toPetty)
+                  _accountList()
+                else
+                  _pettyCashFixedCard(isSource: true),
                 const SizedBox(height: 16),
+
+                const SectionLabel('TRANSFER TO'),
+                const SizedBox(height: 8),
+                if (toPetty)
+                  _pettyCashFixedCard(isSource: false)
+                else
+                  _accountList(),
+                const SizedBox(height: 8),
 
                 const SectionLabel('DATE'),
                 const SizedBox(height: 8),
@@ -275,9 +436,7 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
                   borderRadius: BorderRadius.circular(AppStyles.radiusField),
                   child: InkWell(
                     onTap: _pickDate,
-                    borderRadius: BorderRadius.circular(
-                      AppStyles.radiusField,
-                    ),
+                    borderRadius: BorderRadius.circular(AppStyles.radiusField),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,

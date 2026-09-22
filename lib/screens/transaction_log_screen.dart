@@ -19,6 +19,7 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
     {'label': 'Payroll', 'value': 'payroll'},
     {'label': 'Loans', 'value': 'loan'},
     {'label': 'Advances', 'value': 'advance'},
+    {'label': 'Transfers', 'value': 'transfer'},
   ];
   String _selectedFilter = 'all';
 
@@ -73,8 +74,52 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
           )
           .order('transaction_date', ascending: false);
 
+      // Petty Cash transfers (to/from Investment, Loans, Revenue) are a
+      // separate ledger (account_transactions) but the user wants to see
+      // them alongside regular transactions here, since they move the same
+      // cash-on-hand balance.
+      final accountsData = await supabase.from('accounts').select();
+      final accounts = List<Map<String, dynamic>>.from(accountsData);
+      final accountNameById = {
+        for (final a in accounts) a['id'] as String: a['name'] as String,
+      };
+      final pettyCash = accounts.firstWhere((a) => a['name'] == 'Petty Cash');
+      final pettyCashId = pettyCash['id'] as String;
+
+      final transfersData = await supabase
+          .from('account_transactions')
+          .select()
+          .eq('account_id', pettyCashId);
+      final transferRows = List<Map<String, dynamic>>.from(transfersData)
+          .where(
+            (t) => t['type'] == 'transfer_in' || t['type'] == 'transfer_out',
+          )
+          .map((t) {
+            final relatedId = t['related_account_id'] as String?;
+            final relatedName = relatedId != null
+                ? (accountNameById[relatedId] ?? 'Account')
+                : 'Account';
+            return <String, dynamic>{
+              'id': t['id'],
+              'type': t['type'],
+              'amount': t['amount'],
+              'transaction_date': t['transaction_date'],
+              'note': t['note'],
+              'related_account_name': relatedName,
+              'is_transfer': true,
+            };
+          })
+          .toList();
+
+      final merged = [...List<Map<String, dynamic>>.from(data), ...transferRows]
+        ..sort(
+          (a, b) => (b['transaction_date'] as String).compareTo(
+            a['transaction_date'] as String,
+          ),
+        );
+
       setState(() {
-        _transactions = List<Map<String, dynamic>>.from(data);
+        _transactions = merged;
         _loading = false;
       });
     } catch (e) {
@@ -138,9 +183,13 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
   }
 
   List<Map<String, dynamic>> get _filteredTransactions {
-    return _searchAndDateFiltered
-        .where((t) => _selectedFilter == 'all' || t['type'] == _selectedFilter)
-        .toList();
+    return _searchAndDateFiltered.where((t) {
+      if (_selectedFilter == 'all') return true;
+      if (_selectedFilter == 'transfer') {
+        return t['type'] == 'transfer_in' || t['type'] == 'transfer_out';
+      }
+      return t['type'] == _selectedFilter;
+    }).toList();
   }
 
   Map<String, double> get _categoryTotals {
@@ -161,7 +210,8 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
     return totals;
   }
 
-  bool _isCashIn(String type) => type == 'loan_repayment';
+  bool _isCashIn(String type) =>
+      type == 'loan_repayment' || type == 'transfer_in';
   bool _isNeutral(String type) => type == 'advance_deduction';
 
   IconData _iconFor(String type) {
@@ -177,6 +227,10 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
       case 'loan_repayment':
       case 'advance_deduction':
         return Icons.arrow_downward;
+      case 'transfer_in':
+        return Icons.call_received;
+      case 'transfer_out':
+        return Icons.call_made;
       default:
         return Icons.more_horiz;
     }
@@ -195,6 +249,13 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
   String _titleFor(Map<String, dynamic> t) {
     final type = t['type'] as String;
     final label = _typeLabel(type);
+
+    if (type == 'transfer_in' || type == 'transfer_out') {
+      final relatedName = t['related_account_name'] as String? ?? 'Account';
+      return type == 'transfer_in'
+          ? 'Transfer from $relatedName'
+          : 'Transfer to $relatedName';
+    }
 
     final partnerName = t['partners']?['name'] as String?;
     final staffName = t['staff']?['name'] as String?;
@@ -436,9 +497,7 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
                           selectedColor: chipColor,
                           backgroundColor: AppColors.surface,
                           side: BorderSide(
-                            color: selected
-                                ? chipColor
-                                : AppColors.hairline,
+                            color: selected ? chipColor : AppColors.hairline,
                           ),
                           labelStyle: TextStyle(
                             fontSize: 13,
@@ -530,7 +589,8 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
                                                 : color,
                                           ),
                                         ),
-                                        if (_role == 'admin')
+                                        if (_role == 'admin' &&
+                                            t['is_transfer'] != true)
                                           Padding(
                                             padding: const EdgeInsets.only(
                                               top: 6,
@@ -557,8 +617,7 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
                                                     Icon(
                                                       Icons.edit_outlined,
                                                       size: 13,
-                                                      color:
-                                                          AppColors.inkMuted,
+                                                      color: AppColors.inkMuted,
                                                     ),
                                                     SizedBox(width: 4),
                                                     Text(
@@ -696,11 +755,14 @@ class _EditTransactionSheetState extends State<_EditTransactionSheet> {
     setState(() => _saving = true);
     try {
       final t = widget.transaction;
-      await supabase.from('transactions').update({
-        'transaction_date': _dbDateFormat.format(_selectedDate),
-        'note': _noteController.text.trim(),
-        'amount': newAmount,
-      }).eq('id', t['id']);
+      await supabase
+          .from('transactions')
+          .update({
+            'transaction_date': _dbDateFormat.format(_selectedDate),
+            'note': _noteController.text.trim(),
+            'amount': newAmount,
+          })
+          .eq('id', t['id']);
 
       if (_items.isNotEmpty) {
         await supabase

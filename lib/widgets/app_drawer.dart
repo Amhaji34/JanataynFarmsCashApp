@@ -127,6 +127,14 @@ class AppDrawer extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.only(top: 12, bottom: 8),
               children: [
+                if (isAdmin)
+                  _navTile(
+                    context: context,
+                    icon: Icons.account_balance_outlined,
+                    label: 'Accounts',
+                    color: AppColors.neutral,
+                    destination: const SettingsScreen(),
+                  ),
                 _navTile(
                   context: context,
                   icon: Icons.receipt_long_outlined,
@@ -188,13 +196,6 @@ class AppDrawer extends StatelessWidget {
                     color: AppColors.brandNavy,
                     destination: const PartnersScreen(),
                   ),
-                  _navTile(
-                    context: context,
-                    icon: Icons.account_balance_outlined,
-                    label: 'Accounts',
-                    color: AppColors.neutral,
-                    destination: const SettingsScreen(),
-                  ),
                 ],
               ],
             ),
@@ -211,10 +212,7 @@ class AppDrawer extends StatelessWidget {
                   onTap: () => _logout(context),
                   borderRadius: BorderRadius.circular(12),
                   child: const Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 10,
-                    ),
+                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                     child: Row(
                       children: [
                         Icon(

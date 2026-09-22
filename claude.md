@@ -275,21 +275,31 @@ Four fixed accounts (`accounts` table) sit above the transaction ledger:
 three are "fundable" — money is added to them directly (a capital
 investment, loan proceeds received, revenue collected **including harvest
 sale payments — see "Harvests and customer sales" below**). None of them
-can be spent from directly, and Petty Cash cannot be funded any other
-way: the **only** path into Petty Cash is a transfer from one of the
-other three. This is enforced by the UI (Add Funds only offers the
-fundable three; Transfer only offers them as a source and always targets
-Petty Cash), not by a DB constraint.
+can be spent from directly. Petty Cash is never funded directly either —
+capital always enters via one of the other three first. The only way
+money moves into or out of Petty Cash is a **transfer**, and transfers go
+both ways: **Transfer to Petty Cash** (from Investment/Loans/Revenue —
+the original, and still the only way Petty Cash ever gets funded) and
+**Transfer from Petty Cash** (back into one of the other three, e.g. to
+correct a misallocation or move cash back into a capital account). The
+Transfer screen (`transfer_funds_screen.dart`) has a direction toggle for
+this; which side is the fixed "Petty Cash" leg and which side is the
+picker flips with it. This is enforced by the UI (Add Funds only ever
+targets the fundable three, never Petty Cash directly), not by a DB
+constraint.
 
-Every account's balance is **calculated**, never stored, same philosophy
-as everywhere else in this app:
+Every fundable account's balance is **calculated**, never stored, same
+philosophy as everywhere else in this app:
 ```
 investment/loans/revenue balance = sum(fund_add.amount)
+                                  + sum(transfer_in.amount)
                                   - sum(transfer_out.amount)
 ```
-A transfer writes two `account_transactions` rows in one insert — a
-`transfer_out` on the source account and a `transfer_in` on Petty Cash —
-so each account's history page reads correctly on its own without a join.
+(`transfer_in` only happens on these three if money was transferred back
+from Petty Cash.) A transfer writes two `account_transactions` rows in
+one insert — a `transfer_out` on the source account and a `transfer_in`
+on the destination — so each account's history page reads correctly on
+its own without a join.
 
 **Petty Cash is the account the rest of the app actually means by "cash
 on hand".** Its balance folds in both the accounts ledger and the main
@@ -297,6 +307,7 @@ transaction ledger:
 ```
 petty_cash_balance = opening_balance
                     + sum(account_transactions: transfer_in on Petty Cash)
+                    - sum(account_transactions: transfer_out on Petty Cash)
                     + sum(loan_repayment.amount)
                     - sum(expense.amount)
                     - sum(payroll.amount)
@@ -312,6 +323,19 @@ This is all computed client-side in Dart by fetching the small ledger
 tables and summing (fine at current scale — a 3-person farm business). If
 volume grows significantly, move this aggregation into a Postgres view or
 RPC function so the database does the math instead of the client.
+
+**Petty Cash transfers also appear in the Transactions log**, even though
+they live in `account_transactions`, not `transactions` — since they move
+the same cash-on-hand balance the log is supposed to represent. The
+Transactions screen fetches Petty Cash's `transfer_in`/`transfer_out`
+rows alongside the `transactions` table and merges them into one
+date-sorted list purely for display (as pseudo-rows tagged
+`is_transfer: true`); nothing is written to the `transactions` table
+itself, so this doesn't create a new "transfer" transaction type or
+require a migration. These entries are excluded from the per-type total
+cards and the Edit button (there's no edit flow for a transfer — delete
+and redo via a fresh transfer if a mistake needs correcting), but do show
+under a dedicated "Transfers" filter chip and count toward "All".
 
 ## Harvests and customer sales
 
@@ -426,19 +450,22 @@ lib/
 ├── widgets/
 │   └── app_drawer.dart            — side navigation Drawer, opened via
 │                                     the dashboard's hamburger icon.
-│                                     Always shows Transactions + Reports
-│                                     + Log out (read-only, so viewers see
-│                                     them too); shows "Run Payroll" plus a
-│                                     "MANAGE" section (Expense categories,
-│                                     Staff, Partners, Accounts) for
-│                                     admins only. Also always shows
-│                                     Harvests + Customers (read-only for
-│                                     viewers, same as Transactions/Reports).
-│                                     "Accounts" navigates to
-│                                     settings_screen.dart — the nav label
-│                                     was renamed from "Settings" since
-│                                     that screen is entirely about the 4
-│                                     funding accounts now (see the
+│                                     "Accounts" (admin only) is the very
+│                                     first item, above Transactions —
+│                                     it's the entry point to the funding
+│                                     accounts, used often enough to
+│                                     deserve top placement rather than
+│                                     living under "MANAGE". Always shows
+│                                     Transactions + Reports + Harvests +
+│                                     Customers + Log out (read-only, so
+│                                     viewers see them too); shows "Run
+│                                     Payroll" plus a "MANAGE" section
+│                                     (Expense categories, Staff, Partners)
+│                                     for admins only. "Accounts" navigates
+│                                     to settings_screen.dart — the nav
+│                                     label was renamed from "Settings"
+│                                     since that screen is entirely about
+│                                     the 4 funding accounts now (see the
 │                                     settings_screen.dart entry below).
 ├── services/
 │   └── customer_payments.dart     — `recordCustomerPayment()`, the shared
@@ -514,31 +541,49 @@ lib/
 │   ├── add_funds_screen.dart      — adds funds to Investment, Loans, or
 │   │                                 Revenue only (Petty Cash excluded).
 │   │                                 Inserts one `fund_add` row.
-│   ├── transfer_funds_screen.dart — moves funds from Investment/Loans/
-│   │                                 Revenue into Petty Cash — the only
-│   │                                 way Petty Cash is funded. Shows each
-│   │                                 source account's available balance
-│   │                                 and validates against it. Inserts a
-│   │                                 transfer_out + transfer_in pair.
+│   ├── transfer_funds_screen.dart — moves funds between Petty Cash and one
+│   │                                 of Investment/Loans/Revenue, either
+│   │                                 direction. A "To Petty Cash / From
+│   │                                 Petty Cash" toggle at the top swaps
+│   │                                 which side is the fixed Petty Cash
+│   │                                 leg and which side is the picker;
+│   │                                 the picker always shows each
+│   │                                 candidate account's available
+│   │                                 balance and validates the amount
+│   │                                 against it (Petty Cash's own balance
+│   │                                 is computed with the same formula as
+│   │                                 the dashboard/account history when
+│   │                                 it's the source). Inserts a
+│   │                                 transfer_out + transfer_in pair
+│   │                                 either way.
 │   ├── account_history_screen.dart — balance + ledger for one account.
 │   │                                 For Petty Cash, folds in the main
 │   │                                 `transactions` table (expenses,
 │   │                                 payroll, loans, advances,
 │   │                                 repayments) alongside its
-│   │                                 transfer_in rows, since that's what
-│   │                                 actually moves its balance.
+│   │                                 transfer_in/transfer_out rows, since
+│   │                                 that's what actually moves its
+│   │                                 balance (transfer_out on Petty Cash
+│   │                                 only exists since transfers became
+│   │                                 bidirectional).
 │   ├── transaction_log_screen.dart — searchable, filterable list of all
-│   │                                 transactions. Search bar (matches
+│   │                                 transactions, plus Petty Cash's
+│   │                                 transfer_in/transfer_out rows merged
+│   │                                 in for display only (see "Funding
+│   │                                 accounts" above). Search bar (matches
 │   │                                 note/partner/staff/category), date
 │   │                                 range filter, the 4 main per-type
 │   │                                 total cards (Expenses/Payroll/
-│   │                                 Loans/Advances), type filter chips,
-│   │                                 and admin-only edit button per row
-│   │                                 (row title always shows the
-│   │                                 category for expense transactions;
-│   │                                 tapping edit opens a bottom sheet for
-│   │                                 single-invoice, full screen for
-│   │                                 multi-invoice).
+│   │                                 Loans/Advances — transfers excluded),
+│   │                                 type filter chips (including
+│   │                                 "Transfers"), and admin-only edit
+│   │                                 button per row, hidden for merged
+│   │                                 transfer rows since there's no edit
+│   │                                 flow for them (row title always
+│   │                                 shows the category for expense
+│   │                                 transactions; tapping edit opens a
+│   │                                 bottom sheet for single-invoice,
+│   │                                 full screen for multi-invoice).
 │   ├── report_screen.dart         — per-account reporting, reached from
 │   │                                 the drawer. A "Payroll / Advances /
 │   │                                 Loans / Expenses" chip selector

@@ -74,6 +74,10 @@ class AppColors {
         return cashIn;
       case 'advance_deduction':
         return neutral;
+      case 'transfer_in':
+        return cashIn;
+      case 'transfer_out':
+        return brandNavy;
       default:
         return neutral;
     }
@@ -159,15 +163,11 @@ class AppTheme {
   AppTheme._();
 
   static ThemeData get light {
-    final scheme =
-        ColorScheme.fromSeed(
-          seedColor: AppColors.brandGreen,
-          primary: AppColors.brandGreen,
-          brightness: Brightness.light,
-        ).copyWith(
-          surface: AppColors.surface,
-          error: AppColors.danger,
-        );
+    final scheme = ColorScheme.fromSeed(
+      seedColor: AppColors.brandGreen,
+      primary: AppColors.brandGreen,
+      brightness: Brightness.light,
+    ).copyWith(surface: AppColors.surface, error: AppColors.danger);
 
     return ThemeData(
       useMaterial3: true,
