@@ -436,7 +436,6 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                   const SizedBox(height: 12),
 
                   Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Expanded(
                         child: _dualStatCard(

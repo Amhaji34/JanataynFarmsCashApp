@@ -334,7 +334,6 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                   const SizedBox(height: 14),
 
                   Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Expanded(
                         child: StatTile(
@@ -383,7 +382,6 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                   ),
                   const SizedBox(height: 12),
                   Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Expanded(
                         child: StatTile(

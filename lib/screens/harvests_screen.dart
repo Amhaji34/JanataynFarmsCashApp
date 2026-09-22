@@ -155,7 +155,6 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                   ),
                   const SizedBox(height: 12),
                   Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Expanded(
                         child: AppCard(
