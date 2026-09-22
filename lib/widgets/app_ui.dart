@@ -154,14 +154,22 @@ class StatTile extends StatelessWidget {
     super.key,
     required this.icon,
     required this.label,
-    required this.value,
+    this.value,
+    this.valueWidget,
     required this.color,
     this.onTap,
-  });
+  }) : assert(
+         value != null || valueWidget != null,
+         'StatTile needs either value or valueWidget',
+       );
 
   final IconData icon;
   final String label;
-  final String value;
+
+  /// A single pre-formatted value string. Ignored when [valueWidget] is
+  /// given (used for e.g. a two-currency stack via DualCurrencyStat).
+  final String? value;
+  final Widget? valueWidget;
   final Color color;
   final VoidCallback? onTap;
 
@@ -185,16 +193,17 @@ class StatTile extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 3),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              color: AppColors.ink,
-              letterSpacing: -0.3,
-            ),
-            overflow: TextOverflow.ellipsis,
-          ),
+          valueWidget ??
+              Text(
+                value!,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.ink,
+                  letterSpacing: -0.3,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
         ],
       ),
     );

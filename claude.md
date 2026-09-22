@@ -81,6 +81,9 @@ Farm workers who receive payroll and advances.
 id           uuid (PK)
 name         text
 base_salary  numeric
+currency     text, 'USD' | 'SLSH' (default 'USD') — the currency
+             base_salary is quoted in, and the default for this staff
+             member's payroll line; not summed into anything
 created_at   timestamptz
 ```
 
@@ -106,6 +109,9 @@ kg_harvested      numeric (> 0)
 price_per_kg      numeric (>= 0)
 customer_id       uuid (FK -> customers.id) — not nullable; a harvest is
                   logged already knowing who it was sold to
+currency          text, 'USD' | 'SLSH' (default 'USD') — the currency
+                  price_per_kg is quoted in; forced onto any upfront
+                  payment for this harvest too (see "Currencies" below)
 note              text (nullable)
 created_by        uuid (FK -> auth.users.id)
 created_at        timestamptz
@@ -123,15 +129,20 @@ harvest_id     uuid (nullable, FK -> harvests.id) — context only; a
                payment always reduces the customer's overall balance,
                never one specific harvest's balance
 amount         numeric (> 0)
+currency       text, 'USD' | 'SLSH' (default 'USD')
 payment_date   date
 note           text (nullable)
 created_by     uuid (FK -> auth.users.id)
 created_at     timestamptz
 ```
-A customer's outstanding balance is always calculated:
+A customer's outstanding balance is always calculated, **per currency**
+(a customer with harvests in both currencies has two separate
+outstanding figures, never blended):
 ```
-outstanding = sum(harvests.kg_harvested * harvests.price_per_kg for that customer)
-            - sum(customer_payments.amount for that customer)
+outstanding[currency] = sum(harvests.kg_harvested * harvests.price_per_kg
+                             for that customer, where harvests.currency = currency)
+                       - sum(customer_payments.amount for that customer,
+                             where customer_payments.currency = currency)
 ```
 
 ### `transactions`
@@ -145,6 +156,9 @@ type                text, one of:
                     'loan_repayment' | 'advance_deduction'
 amount              numeric (the total; for multi-invoice transactions,
                     must equal the sum of its transaction_items amounts)
+currency            text, 'USD' | 'SLSH' (default 'USD') — governs the
+                    whole transaction; every transaction_items row under
+                    it inherits this currency (see "Currencies" below)
 transaction_date    date
 related_partner_id  uuid (nullable, FK -> partners.id) — set for 'loan'
 related_staff_id    uuid (nullable, FK -> staff.id) — set for 'payroll'
@@ -200,6 +214,9 @@ id                  uuid (PK)
 account_id          uuid (FK -> accounts.id)
 type                text, one of: 'fund_add' | 'transfer_in' | 'transfer_out'
 amount              numeric (> 0)
+currency            text, 'USD' | 'SLSH' (default 'USD') — a transfer's
+                    transfer_out/transfer_in pair always share one
+                    currency; there is no conversion
 related_account_id  uuid (nullable, FK -> accounts.id) — the other side of
                     a transfer
 note                text (nullable)
@@ -289,11 +306,14 @@ targets the fundable three, never Petty Cash directly), not by a DB
 constraint.
 
 Every fundable account's balance is **calculated**, never stored, same
-philosophy as everywhere else in this app:
+philosophy as everywhere else in this app, and — since the `currency`
+column landed (see "Currencies" below) — computed **once per currency**,
+so each account shows a USD balance and a SLSH balance side by side
+rather than one blended number:
 ```
-investment/loans/revenue balance = sum(fund_add.amount)
-                                  + sum(transfer_in.amount)
-                                  - sum(transfer_out.amount)
+investment/loans/revenue balance[currency] = sum(fund_add.amount where currency = currency)
+                                            + sum(transfer_in.amount where currency = currency)
+                                            - sum(transfer_out.amount where currency = currency)
 ```
 (`transfer_in` only happens on these three if money was transferred back
 from Petty Cash.) A transfer writes two `account_transactions` rows in
@@ -303,16 +323,17 @@ its own without a join.
 
 **Petty Cash is the account the rest of the app actually means by "cash
 on hand".** Its balance folds in both the accounts ledger and the main
-transaction ledger:
+transaction ledger, again **per currency** (`opening_balance` only ever
+seeds the USD figure — see "Currencies" below):
 ```
-petty_cash_balance = opening_balance
-                    + sum(account_transactions: transfer_in on Petty Cash)
-                    - sum(account_transactions: transfer_out on Petty Cash)
-                    + sum(loan_repayment.amount)
-                    - sum(expense.amount)
-                    - sum(payroll.amount)
-                    - sum(loan.amount)
-                    - sum(advance.amount)
+petty_cash_balance[currency] = (currency == USD ? opening_balance : 0)
+                    + sum(account_transactions: transfer_in on Petty Cash where currency = currency)
+                    - sum(account_transactions: transfer_out on Petty Cash where currency = currency)
+                    + sum(loan_repayment.amount where currency = currency)
+                    - sum(expense.amount where currency = currency)
+                    - sum(payroll.amount where currency = currency)
+                    - sum(loan.amount where currency = currency)
+                    - sum(advance.amount where currency = currency)
 ```
 `advance_deduction` is excluded entirely — it never affects cash. The
 dashboard's cash-on-hand figure, and the balance that expense/payroll
@@ -337,6 +358,68 @@ cards and the Edit button (there's no edit flow for a transfer — delete
 and redo via a fresh transfer if a mistake needs correcting), but do show
 under a dedicated "Transfers" filter chip and count toward "All".
 
+## Currencies
+
+The app tracks two currencies — **USD** and **SLSH** (Somaliland
+Shilling) — as two parallel ledgers that happen to share the same
+tables. There is **no exchange rate anywhere in this app** and never
+converts between them; every balance, total, and chart is computed once
+per currency and shown side by side (or picked via a toggle — see
+below), never summed together into one blended figure.
+
+- **Schema:** a `currency` column (`text`, `'USD' | 'SLSH'`, default
+  `'USD'`) lives on every money-bearing table: `transactions`,
+  `account_transactions`, `harvests`, `customer_payments`, and `staff`
+  (that last one is just a reference default, not summed into anything —
+  see the `staff` table doc above). `transaction_items` has **no**
+  column of its own: a transaction is one atomic event in one currency,
+  so every item under it inherits the parent `transactions.currency`,
+  and the existing "items must sum to the parent amount" invariant is
+  unaffected. `accounts` (the 4 fixed buckets) also needs no column —
+  each account's USD and SLSH balances are just two separately-filtered
+  sums over `account_transactions.currency` for that `account_id`.
+- **Shared utility:** `lib/utils/currency.dart` defines `enum
+  AppCurrency { usd, slsh }` (with `code`, `symbol`, `decimalDigits` —
+  SLSH uses 0 decimal places, USD uses 2), the `formatMoney(amount,
+  currency)` function every screen calls instead of declaring its own
+  `NumberFormat.currency`, a `CurrencyToggle` widget (a two-segment pill
+  for picking a currency on an entry form), and a `DualCurrencyStat`
+  widget (stacks a USD line and a SLSH line, skipping a line that's
+  exactly zero unless both are, for stats that must show both
+  currencies at once).
+- **Entry forms** each get a `CurrencyToggle` next to their amount
+  field: add_transaction_screen.dart, add_funds_screen.dart,
+  transfer_funds_screen.dart, add_harvest_screen.dart,
+  record_payment_screen.dart, staff_screen.dart's add-form, and
+  transaction_log_screen.dart's single-invoice quick-edit sheet. A
+  harvest's currency is forced onto its upfront payment too (a sale and
+  its upfront payment can't be in different currencies without a
+  conversion). `payroll_screen.dart` is the one exception to "one
+  toggle per form": since different staff can be paid in different
+  currencies within the same batch run, the toggle is **per staff
+  line** (defaulting to that staff member's `staff.currency`), and the
+  "Pay N staff" button shows one total per currency actually being
+  paid.
+- **Display screens** show both currencies at once via
+  `DualCurrencyStat` wherever there's a per-entity balance (the
+  dashboard's cash-on-hand hero and stat tiles, the Accounts grid,
+  account history, customer/partner/staff owed badges and detail
+  screens, harvest totals) — this is what "see both, separate" means in
+  practice. Screens built around a bar chart or a single running total
+  across many transactions (report_screen.dart, transaction_log_screen.
+  dart's per-type total cards) instead get a `CurrencyToggle` that
+  narrows *only the totals/charts* to one currency at a time (each list
+  row still shows its own currency inline regardless of the toggle) —
+  a chart can't sensibly overlay two currencies on one axis.
+- **Selecting who owes what:** a person or account can owe/hold balances
+  in both currencies simultaneously (e.g. a customer with harvests
+  priced in both, or a staff member advanced money twice in different
+  currencies) — every "owed" or "outstanding" calculation in this app
+  is therefore a `Map<AppCurrency, double>`, not a single number, and a
+  screen that needs to act on "the" balance (like
+  record_payment_screen.dart validating a payment) first has the user
+  pick which currency's balance they mean.
+
 ## Harvests and customer sales
 
 A `harvests` row doubles as its own sale record: logging a harvest means
@@ -354,15 +437,19 @@ standalone payment — go through the same shared function,
 `recordCustomerPayment()` (`lib/services/customer_payments.dart`), which
 does two things atomically from the app's point of view: inserts the
 `customer_payments` row, then inserts a `fund_add` into the **Revenue**
-funding account for that same amount. This is the mechanism by which
-harvest sale proceeds flow into the funding-accounts system described
-above — a customer payment always credits Revenue, exactly like an
-admin manually adding funds would.
+funding account for that same amount **and currency**. This is the
+mechanism by which harvest sale proceeds flow into the funding-accounts
+system described above — a customer payment always credits Revenue in
+its own currency, exactly like an admin manually adding funds would.
 
-A customer's outstanding balance is always **calculated**, never stored:
+A customer's outstanding balance is always **calculated**, never
+stored, and computed **per currency** (see "Currencies" above) since a
+customer can owe in either or both:
 ```
-outstanding = sum(harvests.kg_harvested * harvests.price_per_kg for that customer)
-            - sum(customer_payments.amount for that customer)
+outstanding[currency] = sum(harvests.kg_harvested * harvests.price_per_kg for that customer,
+                             where harvests.currency = currency)
+                       - sum(customer_payments.amount for that customer,
+                             where customer_payments.currency = currency)
 ```
 `customer_payments.harvest_id` is nullable and purely contextual (which
 harvest a payment was originally tied to, if any) — a payment always
@@ -452,6 +539,14 @@ lib/
 │                                     for persistent login), MaterialApp,
 │                                     exposes the global `supabase` client.
 │                                     `home` is AuthGate, not LoginScreen.
+├── utils/
+│   └── currency.dart               — `AppCurrency` enum (USD/SLSH),
+│                                     `formatMoney()`, `CurrencyToggle`,
+│                                     and `DualCurrencyStat` — see
+│                                     "Currencies" above. Every screen
+│                                     that shows or collects money uses
+│                                     this instead of a local
+│                                     `NumberFormat.currency`.
 ├── widgets/
 │   └── app_drawer.dart            — side navigation Drawer, opened via
 │                                     the dashboard's hamburger icon.
@@ -751,10 +846,11 @@ a raw hex is drifting from the system.
   in `AppTheme.light` rather than per screen.
 - Ink: `AppColors.ink` for primary text, `inkSecondary` for labels,
   `inkMuted` for dates/hints. Don't use `Colors.grey[...]`.
-- Currency: always formatted via `intl`'s `NumberFormat.currency(symbol:
-  '\$', decimalDigits: 2)` — never manual string interpolation like
-  `'\$${value.toStringAsFixed(2)}'`, to keep thousands separators
-  consistent everywhere.
+- Currency: always formatted via `formatMoney(amount, currency)`
+  (`lib/utils/currency.dart`) — never a local `NumberFormat.currency`
+  declaration or manual string interpolation like
+  `'\$${value.toStringAsFixed(2)}'`. See "Currencies" above for the full
+  model (`AppCurrency`, `CurrencyToggle`, `DualCurrencyStat`).
 - **Cards** use the `AppCard` widget (or `AppStyles.card`): white, 16px
   radius, hairline border, and a soft low-contrast shadow. Stat tiles use
   `AppCard(accent: color)` / `AppStyles.accentCard`, which tints the
@@ -801,3 +897,7 @@ a raw hex is drifting from the system.
 4. Keep the opening balance / calculated-balance approach — avoid adding
    stored running-balance columns (including a stored balance on
    `accounts`) that could drift out of sync with the ledger tables.
+5. Every money-bearing insert must set `currency` (from an `AppCurrency`
+   the user picked via `CurrencyToggle`, not a hardcoded default) and
+   every aggregate/sum must group by currency — never add a USD amount
+   to a SLSH amount. See "Currencies" above.

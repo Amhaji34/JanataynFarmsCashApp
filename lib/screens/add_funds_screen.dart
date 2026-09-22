@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../main.dart';
 import '../theme/app_theme.dart';
+import '../utils/currency.dart';
 import '../widgets/app_ui.dart';
 
 /// Adds funds to one of the three fundable accounts (Investment, Loans,
@@ -22,6 +23,7 @@ class _AddFundsScreenState extends State<AddFundsScreen> {
   String? _loadError;
   List<Map<String, dynamic>> _accounts = [];
   String? _selectedAccountId;
+  AppCurrency _selectedCurrency = AppCurrency.usd;
 
   final _amountController = TextEditingController();
   final _noteController = TextEditingController();
@@ -51,14 +53,13 @@ class _AddFundsScreenState extends State<AddFundsScreen> {
       final data = await supabase.from('accounts').select();
       final all = List<Map<String, dynamic>>.from(data);
       setState(() {
-        _accounts = all
-            .where((a) => _fundableAccounts.contains(a['name']))
-            .toList()
-          ..sort(
-            (a, b) => _fundableAccounts
-                .indexOf(a['name'] as String)
-                .compareTo(_fundableAccounts.indexOf(b['name'] as String)),
-          );
+        _accounts =
+            all.where((a) => _fundableAccounts.contains(a['name'])).toList()
+              ..sort(
+                (a, b) => _fundableAccounts
+                    .indexOf(a['name'] as String)
+                    .compareTo(_fundableAccounts.indexOf(b['name'] as String)),
+              );
         _loadingAccounts = false;
       });
     } catch (e) {
@@ -100,6 +101,7 @@ class _AddFundsScreenState extends State<AddFundsScreen> {
         'amount': amount,
         'transaction_date': _dbDateFormat.format(_selectedDate),
         'note': _noteController.text.trim(),
+        'currency': _selectedCurrency.code,
       });
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
@@ -177,9 +179,7 @@ class _AddFundsScreenState extends State<AddFundsScreen> {
                   borderRadius: BorderRadius.circular(AppStyles.radiusField),
                   child: InkWell(
                     onTap: _pickDate,
-                    borderRadius: BorderRadius.circular(
-                      AppStyles.radiusField,
-                    ),
+                    borderRadius: BorderRadius.circular(AppStyles.radiusField),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
@@ -221,6 +221,15 @@ class _AddFundsScreenState extends State<AddFundsScreen> {
                 ),
                 const SizedBox(height: 16),
 
+                const SectionLabel('CURRENCY'),
+                const SizedBox(height: 8),
+                CurrencyToggle(
+                  value: _selectedCurrency,
+                  onChanged: (value) =>
+                      setState(() => _selectedCurrency = value),
+                ),
+                const SizedBox(height: 16),
+
                 const SectionLabel('AMOUNT'),
                 const SizedBox(height: 8),
                 TextField(
@@ -232,10 +241,10 @@ class _AddFundsScreenState extends State<AddFundsScreen> {
                     fontSize: 22,
                     fontWeight: FontWeight.w700,
                   ),
-                  decoration: const InputDecoration(
-                    hintText: '\$0.00',
-                    prefixText: '\$ ',
-                    prefixStyle: TextStyle(
+                  decoration: InputDecoration(
+                    hintText: '${_selectedCurrency.symbol}0',
+                    prefixText: '${_selectedCurrency.symbol} ',
+                    prefixStyle: const TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.w700,
                       color: AppColors.ink,

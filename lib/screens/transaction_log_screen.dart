@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../main.dart';
 import '../theme/app_theme.dart';
+import '../utils/currency.dart';
 import '../widgets/app_ui.dart';
 import 'add_transaction_screen.dart';
 
@@ -36,8 +37,8 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
   String _searchQuery = '';
 
   late DateTimeRange? _dateRange = widget.initialDateRange;
+  AppCurrency _totalsCurrency = AppCurrency.usd;
 
-  final _currency = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
   final _dateFormat = DateFormat('MMM d');
 
   @override
@@ -107,6 +108,7 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
               'id': t['id'],
               'type': t['type'],
               'amount': t['amount'],
+              'currency': t['currency'],
               'transaction_date': t['transaction_date'],
               'note': t['note'],
               'related_account_name': relatedName,
@@ -209,6 +211,9 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
       if (!totals.containsKey(type)) {
         continue;
       }
+      if (AppCurrency.fromCode(t['currency'] as String?) != _totalsCurrency) {
+        continue;
+      }
       totals[type] = totals[type]! + (t['amount'] as num).toDouble();
     }
     return totals;
@@ -283,12 +288,13 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
   Widget _subtitleFor(Map<String, dynamic> t, DateTime date) {
     final items = _itemsOf(t);
     final dateText = _dateFormat.format(date);
+    final currency = AppCurrency.fromCode(t['currency'] as String?);
 
     if (items.length > 1) {
       final breakdown = items
           .map(
             (i) =>
-                '${i['category']} ${_currency.format((i['amount'] as num).toDouble())}',
+                '${i['category']} ${formatMoney((i['amount'] as num).toDouble(), currency)}',
           )
           .join(' · ');
       return Column(
@@ -442,6 +448,33 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
                   ),
                   const SizedBox(height: 12),
 
+                  // Totals currency toggle - narrows the totals below, not
+                  // the list (each row still shows its own currency).
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        const Text(
+                          'Totals in:',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.inkMuted,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: CurrencyToggle(
+                            value: _totalsCurrency,
+                            onChanged: (value) =>
+                                setState(() => _totalsCurrency = value),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
                   // Per-type totals
                   SizedBox(
                     height: 82,
@@ -537,6 +570,9 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
                               final t = _filteredTransactions[index];
                               final type = t['type'] as String;
                               final amount = (t['amount'] as num).toDouble();
+                              final currency = AppCurrency.fromCode(
+                                t['currency'] as String?,
+                              );
                               final date = DateTime.parse(
                                 t['transaction_date'] as String,
                               );
@@ -582,8 +618,8 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
                                       children: [
                                         Text(
                                           isNeutral
-                                              ? _currency.format(amount)
-                                              : '${isIn ? '+' : '-'}${_currency.format(amount)}',
+                                              ? formatMoney(amount, currency)
+                                              : '${isIn ? '+' : '-'}${formatMoney(amount, currency)}',
                                           style: TextStyle(
                                             fontSize: 15,
                                             fontWeight: FontWeight.w700,
@@ -679,7 +715,7 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
           ),
           const SizedBox(height: 7),
           Text(
-            _currency.format(value),
+            formatMoney(value, _totalsCurrency),
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w700,
@@ -708,6 +744,7 @@ class _EditTransactionSheetState extends State<_EditTransactionSheet> {
   late final TextEditingController _noteController;
   late final TextEditingController _amountController;
   late final List<Map<String, dynamic>> _items;
+  late AppCurrency _selectedCurrency;
 
   final _dateFormat = DateFormat('MMM d, yyyy');
   final _dbDateFormat = DateFormat('yyyy-MM-dd');
@@ -725,6 +762,7 @@ class _EditTransactionSheetState extends State<_EditTransactionSheet> {
     _amountController = TextEditingController(
       text: (t['amount'] as num).toDouble().toStringAsFixed(2),
     );
+    _selectedCurrency = AppCurrency.fromCode(t['currency'] as String?);
   }
 
   @override
@@ -765,6 +803,7 @@ class _EditTransactionSheetState extends State<_EditTransactionSheet> {
             'transaction_date': _dbDateFormat.format(_selectedDate),
             'note': _noteController.text.trim(),
             'amount': newAmount,
+            'currency': _selectedCurrency.code,
           })
           .eq('id', t['id']);
 
@@ -909,6 +948,14 @@ class _EditTransactionSheetState extends State<_EditTransactionSheet> {
               ),
               const SizedBox(height: 18),
 
+              const SectionLabel('CURRENCY'),
+              const SizedBox(height: 7),
+              CurrencyToggle(
+                value: _selectedCurrency,
+                onChanged: (value) => setState(() => _selectedCurrency = value),
+              ),
+              const SizedBox(height: 18),
+
               const SectionLabel('AMOUNT'),
               const SizedBox(height: 7),
               TextField(
@@ -921,9 +968,9 @@ class _EditTransactionSheetState extends State<_EditTransactionSheet> {
                   fontWeight: FontWeight.w700,
                   color: AppColors.ink,
                 ),
-                decoration: const InputDecoration(
-                  prefixText: '\$ ',
-                  prefixStyle: TextStyle(
+                decoration: InputDecoration(
+                  prefixText: '${_selectedCurrency.symbol} ',
+                  prefixStyle: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
                     color: AppColors.ink,

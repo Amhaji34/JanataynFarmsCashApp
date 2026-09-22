@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../main.dart';
 import '../services/customer_payments.dart';
 import '../theme/app_theme.dart';
+import '../utils/currency.dart';
 import '../widgets/app_ui.dart';
 import 'customers_screen.dart';
 
@@ -31,7 +32,7 @@ class _AddHarvestScreenState extends State<AddHarvestScreen> {
   DateTime _selectedDate = DateTime.now();
   final _dateFormat = DateFormat('MMM d, yyyy');
   final _dbDateFormat = DateFormat('yyyy-MM-dd');
-  final _currency = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
+  AppCurrency _selectedCurrency = AppCurrency.usd;
 
   bool _saving = false;
   String? _errorMessage;
@@ -114,7 +115,8 @@ class _AddHarvestScreenState extends State<AddHarvestScreen> {
     if (_upfront > _totalValue + 0.01) {
       setState(
         () => _errorMessage =
-            'Upfront payment can\'t exceed the total value (${_currency.format(_totalValue)}).',
+            'Upfront payment can\'t exceed the total value '
+            '(${formatMoney(_totalValue, _selectedCurrency)}).',
       );
       return;
     }
@@ -129,6 +131,7 @@ class _AddHarvestScreenState extends State<AddHarvestScreen> {
             'price_per_kg': _pricePerKg,
             'customer_id': _selectedCustomerId,
             'note': _noteController.text.trim(),
+            'currency': _selectedCurrency.code,
           })
           .select()
           .single();
@@ -139,6 +142,7 @@ class _AddHarvestScreenState extends State<AddHarvestScreen> {
           harvestId: harvestResponse['id'] as String,
           amount: _upfront,
           date: _selectedDate,
+          currency: _selectedCurrency,
           note: 'Upfront payment for harvest sale',
         );
       }
@@ -172,9 +176,7 @@ class _AddHarvestScreenState extends State<AddHarvestScreen> {
                   borderRadius: BorderRadius.circular(AppStyles.radiusField),
                   child: InkWell(
                     onTap: _pickDate,
-                    borderRadius: BorderRadius.circular(
-                      AppStyles.radiusField,
-                    ),
+                    borderRadius: BorderRadius.circular(AppStyles.radiusField),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
@@ -213,6 +215,15 @@ class _AddHarvestScreenState extends State<AddHarvestScreen> {
                       ),
                     ),
                   ),
+                ),
+                const SizedBox(height: 18),
+
+                const SectionLabel('CURRENCY'),
+                const SizedBox(height: 8),
+                CurrencyToggle(
+                  value: _selectedCurrency,
+                  onChanged: (value) =>
+                      setState(() => _selectedCurrency = value),
                 ),
                 const SizedBox(height: 18),
 
@@ -257,9 +268,10 @@ class _AddHarvestScreenState extends State<AddHarvestScreen> {
                               fontSize: 18,
                               fontWeight: FontWeight.w700,
                             ),
-                            decoration: const InputDecoration(
-                              hintText: '0.00',
-                              prefixText: '\$ ',
+                            decoration: InputDecoration(
+                              hintText:
+                                  '0${_selectedCurrency.decimalDigits > 0 ? '.00' : ''}',
+                              prefixText: '${_selectedCurrency.symbol} ',
                             ),
                           ),
                         ],
@@ -306,7 +318,7 @@ class _AddHarvestScreenState extends State<AddHarvestScreen> {
                         ),
                       ),
                       Text(
-                        _currency.format(_totalValue),
+                        formatMoney(_totalValue, _selectedCurrency),
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
@@ -385,17 +397,20 @@ class _AddHarvestScreenState extends State<AddHarvestScreen> {
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
                   ),
-                  decoration: const InputDecoration(
-                    hintText: '\$0.00',
-                    prefixText: '\$ ',
+                  decoration: InputDecoration(
+                    hintText: '${_selectedCurrency.symbol}0',
+                    prefixText: '${_selectedCurrency.symbol} ',
                   ),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   _upfront >= _totalValue && _totalValue > 0
                       ? 'Paid in full - nothing added to their balance.'
-                      : 'Remaining ${_currency.format((_totalValue - _upfront).clamp(0, double.infinity))} will be added to their balance.',
-                  style: const TextStyle(fontSize: 12, color: AppColors.inkMuted),
+                      : 'Remaining ${formatMoney((_totalValue - _upfront).clamp(0, double.infinity), _selectedCurrency)} will be added to their balance.',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.inkMuted,
+                  ),
                 ),
                 const SizedBox(height: 20),
 

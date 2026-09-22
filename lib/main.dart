@@ -36,10 +36,7 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       navigatorObservers: [routeObserver],
       locale: const Locale('en'),
-      supportedLocales: const [
-        Locale('en'),
-        Locale('en', 'US'),
-      ],
+      supportedLocales: const [Locale('en'), Locale('en', 'US')],
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
@@ -50,4 +47,3 @@ class MyApp extends StatelessWidget {
     );
   }
 }
-

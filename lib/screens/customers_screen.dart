@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../main.dart';
 import '../theme/app_theme.dart';
+import '../utils/currency.dart';
 import '../widgets/app_ui.dart';
 import 'customer_detail_screen.dart';
 
@@ -20,15 +20,13 @@ class _CustomersScreenState extends State<CustomersScreen> {
   bool _loading = true;
   String? _errorMessage;
   List<Map<String, dynamic>> _customers = [];
-  Map<String, double> _owed = {};
+  Map<String, Map<AppCurrency, double>> _owed = {};
 
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _noteController = TextEditingController();
   bool _adding = false;
   String? _addError;
-
-  final _currency = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
 
   @override
   void initState() {
@@ -55,30 +53,37 @@ class _CustomersScreenState extends State<CustomersScreen> {
 
       final harvestsData = await supabase
           .from('harvests')
-          .select('customer_id, kg_harvested, price_per_kg');
+          .select('customer_id, kg_harvested, price_per_kg, currency');
       final harvests = List<Map<String, dynamic>>.from(harvestsData);
 
       final paymentsData = await supabase
           .from('customer_payments')
-          .select('customer_id, amount');
+          .select('customer_id, amount, currency');
       final payments = List<Map<String, dynamic>>.from(paymentsData);
 
-      final owed = <String, double>{};
+      final owed = <String, Map<AppCurrency, double>>{};
       for (final customer in customers) {
         final id = customer['id'] as String;
-        double sold = 0;
+        final sold = {for (final c in AppCurrency.values) c: 0.0};
         for (final h in harvests) {
           if (h['customer_id'] != id) continue;
-          sold +=
+          final currency = AppCurrency.fromCode(h['currency'] as String?);
+          sold[currency] =
+              (sold[currency] ?? 0) +
               (h['kg_harvested'] as num).toDouble() *
-              (h['price_per_kg'] as num).toDouble();
+                  (h['price_per_kg'] as num).toDouble();
         }
-        double paid = 0;
+        final paid = {for (final c in AppCurrency.values) c: 0.0};
         for (final p in payments) {
           if (p['customer_id'] != id) continue;
-          paid += (p['amount'] as num).toDouble();
+          final currency = AppCurrency.fromCode(p['currency'] as String?);
+          paid[currency] =
+              (paid[currency] ?? 0) + (p['amount'] as num).toDouble();
         }
-        owed[id] = sold - paid;
+        owed[id] = {
+          for (final c in AppCurrency.values)
+            c: (sold[c] ?? 0) - (paid[c] ?? 0),
+        };
       }
 
       setState(() {
@@ -239,14 +244,15 @@ class _CustomersScreenState extends State<CustomersScreen> {
                     const EmptyState(
                       icon: Icons.groups_outlined,
                       title: 'No customers yet',
-                      subtitle: 'Add a customer above to start recording sales.',
+                      subtitle:
+                          'Add a customer above to start recording sales.',
                     )
                   else
                     ..._customers.map((customer) {
                       final name = customer['name'] as String;
                       final phone = customer['phone'] as String?;
-                      final owed = _owed[customer['id']] ?? 0;
-                      final hasDebt = owed > 0.01;
+                      final owed = _owed[customer['id']] ?? {};
+                      final hasDebt = owed.values.any((v) => v > 0.01);
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 10),
                         child: AppCard(
@@ -261,8 +267,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                               const SizedBox(width: 13),
                               Expanded(
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       name,
@@ -298,8 +303,12 @@ class _CustomersScreenState extends State<CustomersScreen> {
                                     ),
                                   ),
                                   const SizedBox(height: 2),
-                                  Text(
-                                    _currency.format(owed.abs()),
+                                  DualCurrencyStat(
+                                    amounts: {
+                                      for (final c in AppCurrency.values)
+                                        c: (owed[c] ?? 0).abs(),
+                                    },
+                                    crossAxisAlignment: CrossAxisAlignment.end,
                                     style: TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w700,

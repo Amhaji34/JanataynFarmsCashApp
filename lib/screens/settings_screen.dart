@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../main.dart';
 import '../theme/app_theme.dart';
+import '../utils/currency.dart';
 import '../widgets/app_ui.dart';
 import 'account_history_screen.dart';
 import 'add_funds_screen.dart';
@@ -26,9 +26,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _accountsLoading = true;
   String? _accountsError;
   List<Map<String, dynamic>> _accounts = [];
-  Map<String, double> _accountBalances = {};
-
-  final _currency = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
+  Map<String, Map<AppCurrency, double>> _accountBalances = {};
 
   @override
   void initState() {
@@ -60,35 +58,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final txnsData = await supabase.from('transactions').select();
       final txns = List<Map<String, dynamic>>.from(txnsData);
 
-      final balances = <String, double>{};
+      final balances = <String, Map<AppCurrency, double>>{};
       for (final account in accounts) {
         final id = account['id'] as String;
         final name = account['name'] as String;
-        double balance = 0;
+        final balance = {for (final c in AppCurrency.values) c: 0.0};
 
         for (final t in ledger) {
           if (t['account_id'] != id) continue;
+          final currency = AppCurrency.fromCode(t['currency'] as String?);
           final amount = (t['amount'] as num).toDouble();
           if (t['type'] == 'fund_add' || t['type'] == 'transfer_in') {
-            balance += amount;
+            balance[currency] = (balance[currency] ?? 0) + amount;
           } else if (t['type'] == 'transfer_out') {
-            balance -= amount;
+            balance[currency] = (balance[currency] ?? 0) - amount;
           }
         }
 
         if (name == 'Petty Cash') {
-          balance += opening;
+          balance[AppCurrency.usd] = (balance[AppCurrency.usd] ?? 0) + opening;
           for (final t in txns) {
+            final currency = AppCurrency.fromCode(t['currency'] as String?);
             final amount = (t['amount'] as num).toDouble();
             switch (t['type']) {
               case 'expense':
               case 'payroll':
               case 'loan':
               case 'advance':
-                balance -= amount;
+                balance[currency] = (balance[currency] ?? 0) - amount;
                 break;
               case 'loan_repayment':
-                balance += amount;
+                balance[currency] = (balance[currency] ?? 0) + amount;
                 break;
             }
           }
@@ -154,9 +154,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
                     color: AppColors.brandNavy.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(
-                      AppStyles.radiusCard,
-                    ),
+                    borderRadius: BorderRadius.circular(AppStyles.radiusCard),
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -204,11 +202,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   physics: const NeverScrollableScrollPhysics(),
                   mainAxisSpacing: 12,
                   crossAxisSpacing: 12,
-                  childAspectRatio: 1.5,
+                  childAspectRatio: 1.15,
                   children: _accounts.map((account) {
                     final name = account['name'] as String;
                     final color = AppColors.accentFor(name);
-                    final balance = _accountBalances[account['id']] ?? 0;
+                    final balance = _accountBalances[account['id']] ?? {};
                     return AppCard(
                       accent: color,
                       padding: const EdgeInsets.all(14),
@@ -217,7 +215,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           IconBadge(
-                            icon: _accountIcons[name] ??
+                            icon:
+                                _accountIcons[name] ??
                                 Icons.account_balance_outlined,
                             color: color,
                             size: 32,
@@ -233,14 +232,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           ),
                           const SizedBox(height: 2),
-                          Text(
-                            _currency.format(balance),
+                          DualCurrencyStat(
+                            amounts: balance,
                             style: const TextStyle(
-                              fontSize: 15,
+                              fontSize: 14,
                               fontWeight: FontWeight.w700,
                               color: AppColors.ink,
                             ),
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),

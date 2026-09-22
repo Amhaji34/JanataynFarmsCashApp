@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../main.dart';
 import '../theme/app_theme.dart';
+import '../utils/currency.dart';
 import '../widgets/app_ui.dart';
 
 enum _Direction { toPettyCash, fromPettyCash }
@@ -25,17 +26,21 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
   bool _loadingAccounts = true;
   String? _loadError;
   List<Map<String, dynamic>> _fundableAccountRows = [];
-  Map<String, double> _balances = {};
-  double _pettyCashBalance = 0;
+
+  /// accountId -> {currency code -> balance}.
+  Map<String, Map<String, double>> _balances = {};
+
+  /// currency code -> Petty Cash balance in that currency.
+  Map<String, double> _pettyCashBalances = {};
   String? _pettyCashId;
   String? _selectedAccountId;
+  AppCurrency _selectedCurrency = AppCurrency.usd;
 
   final _amountController = TextEditingController();
   final _noteController = TextEditingController();
   DateTime _selectedDate = DateTime.now();
   final _dateFormat = DateFormat('MMM d, yyyy');
   final _dbDateFormat = DateFormat('yyyy-MM-dd');
-  final _currency = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
 
   bool _saving = false;
   String? _errorMessage;
@@ -76,52 +81,66 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
                   .compareTo(_fundableAccounts.indexOf(b['name'] as String)),
             );
 
-      final balances = <String, double>{};
+      final balances = <String, Map<String, double>>{};
       for (final account in fundable) {
         final id = account['id'] as String;
-        double balance = 0;
+        final byCurrency = <String, double>{
+          for (final c in AppCurrency.values) c.code: 0,
+        };
         for (final t in ledger) {
           if (t['account_id'] != id) continue;
+          final currency = t['currency'] as String? ?? AppCurrency.usd.code;
           final amount = (t['amount'] as num).toDouble();
           if (t['type'] == 'fund_add' || t['type'] == 'transfer_in') {
-            balance += amount;
+            byCurrency[currency] = (byCurrency[currency] ?? 0) + amount;
           } else if (t['type'] == 'transfer_out') {
-            balance -= amount;
+            byCurrency[currency] = (byCurrency[currency] ?? 0) - amount;
           }
         }
-        balances[id] = balance;
+        balances[id] = byCurrency;
       }
 
       // Petty Cash's balance also folds in the main transactions ledger
       // (expenses/payroll/loans/advances/repayments) and the opening
       // balance - same formula as the dashboard and account history screen.
+      // Every sum here is grouped by currency - USD and SLSH never mix.
       final settingsRow = await supabase
           .from('settings')
           .select()
           .eq('key', 'opening_balance')
           .single();
-      double pettyCashBalance = (settingsRow['value'] as num).toDouble();
+      final pettyCashBalances = <String, double>{
+        for (final c in AppCurrency.values) c.code: 0,
+      };
+      pettyCashBalances[AppCurrency.usd.code] = (settingsRow['value'] as num)
+          .toDouble();
       for (final t in ledger) {
         if (t['account_id'] != pettyCashId) continue;
+        final currency = t['currency'] as String? ?? AppCurrency.usd.code;
         final amount = (t['amount'] as num).toDouble();
         if (t['type'] == 'transfer_in') {
-          pettyCashBalance += amount;
+          pettyCashBalances[currency] =
+              (pettyCashBalances[currency] ?? 0) + amount;
         } else if (t['type'] == 'transfer_out') {
-          pettyCashBalance -= amount;
+          pettyCashBalances[currency] =
+              (pettyCashBalances[currency] ?? 0) - amount;
         }
       }
       final txnsData = await supabase.from('transactions').select();
       for (final t in List<Map<String, dynamic>>.from(txnsData)) {
+        final currency = t['currency'] as String? ?? AppCurrency.usd.code;
         final amount = (t['amount'] as num).toDouble();
         switch (t['type'] as String) {
           case 'expense':
           case 'payroll':
           case 'loan':
           case 'advance':
-            pettyCashBalance -= amount;
+            pettyCashBalances[currency] =
+                (pettyCashBalances[currency] ?? 0) - amount;
             break;
           case 'loan_repayment':
-            pettyCashBalance += amount;
+            pettyCashBalances[currency] =
+                (pettyCashBalances[currency] ?? 0) + amount;
             break;
         }
       }
@@ -129,7 +148,7 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
       setState(() {
         _fundableAccountRows = fundable;
         _balances = balances;
-        _pettyCashBalance = pettyCashBalance;
+        _pettyCashBalances = pettyCashBalances;
         _pettyCashId = pettyCashId;
         _loadingAccounts = false;
       });
@@ -177,12 +196,13 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
     }
 
     final available = _direction == _Direction.toPettyCash
-        ? (_balances[_selectedAccountId] ?? 0)
-        : _pettyCashBalance;
+        ? (_balances[_selectedAccountId]?[_selectedCurrency.code] ?? 0)
+        : (_pettyCashBalances[_selectedCurrency.code] ?? 0);
     if (amount > available + 0.01) {
       setState(
         () => _errorMessage =
-            'Only ${_currency.format(available)} available in this account.',
+            'Only ${formatMoney(available, _selectedCurrency)} available '
+            'in this account.',
       );
       return;
     }
@@ -207,6 +227,7 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
           'related_account_id': destId,
           'transaction_date': date,
           'note': note,
+          'currency': _selectedCurrency.code,
         },
         {
           'account_id': destId,
@@ -215,6 +236,7 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
           'related_account_id': sourceId,
           'transaction_date': date,
           'note': note,
+          'currency': _selectedCurrency.code,
         },
       ]);
       if (mounted) Navigator.of(context).pop(true);
@@ -323,7 +345,7 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
             ),
           ),
           Text(
-            '${_currency.format(_pettyCashBalance)} available',
+            '${formatMoney(_pettyCashBalances[_selectedCurrency.code] ?? 0, _selectedCurrency)} available',
             style: const TextStyle(
               fontSize: 12,
               color: AppColors.brandGreenDeep,
@@ -341,7 +363,7 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
         final name = a['name'] as String;
         final selected = id == _selectedAccountId;
         final color = AppColors.accentFor(name);
-        final balance = _balances[id] ?? 0;
+        final balance = _balances[id]?[_selectedCurrency.code] ?? 0;
         return Padding(
           padding: const EdgeInsets.only(bottom: 10),
           child: AppCard(
@@ -366,7 +388,7 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '${_currency.format(balance)} available',
+                        '${formatMoney(balance, _selectedCurrency)} available',
                         style: const TextStyle(
                           fontSize: 12,
                           color: AppColors.inkMuted,
@@ -411,6 +433,15 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
               children: [
                 _directionToggle(),
+                const SizedBox(height: 20),
+
+                const SectionLabel('CURRENCY'),
+                const SizedBox(height: 8),
+                CurrencyToggle(
+                  value: _selectedCurrency,
+                  onChanged: (value) =>
+                      setState(() => _selectedCurrency = value),
+                ),
                 const SizedBox(height: 20),
 
                 const SectionLabel('TRANSFER FROM'),
@@ -489,10 +520,10 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
                     fontSize: 22,
                     fontWeight: FontWeight.w700,
                   ),
-                  decoration: const InputDecoration(
-                    hintText: '\$0.00',
-                    prefixText: '\$ ',
-                    prefixStyle: TextStyle(
+                  decoration: InputDecoration(
+                    hintText: '${_selectedCurrency.symbol}0',
+                    prefixText: '${_selectedCurrency.symbol} ',
+                    prefixStyle: const TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.w700,
                       color: AppColors.ink,

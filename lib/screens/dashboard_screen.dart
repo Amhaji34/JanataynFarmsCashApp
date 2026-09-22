@@ -11,6 +11,7 @@ import 'report_screen.dart';
 import 'staff_screen.dart';
 import 'transaction_log_screen.dart';
 import '../theme/app_theme.dart';
+import '../utils/currency.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/app_ui.dart';
 
@@ -24,16 +25,15 @@ DateTimeRange _thisMonthRange() {
   return DateTimeRange(start: start, end: end);
 }
 
+Map<AppCurrency, double> _emptyTotals() => {
+  for (final c in AppCurrency.values) c: 0.0,
+};
+
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
-}
-
-String _formatCurrency(double value) {
-  final formatter = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
-  return formatter.format(value);
 }
 
 class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
@@ -43,16 +43,16 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
   String? _name;
   String? _role;
 
-  double _cashOnHand = 0;
-  double _outstandingLoans = 0;
-  double _outstandingAdvances = 0;
-  double _owedByCustomers = 0;
-  double _monthCashOut = 0;
-  double _monthBills = 0;
-  double _monthPayroll = 0;
-  double _monthAdvancesGiven = 0;
-  double _monthRevenue = 0;
-  double _monthHarvestValue = 0;
+  Map<AppCurrency, double> _cashOnHand = _emptyTotals();
+  Map<AppCurrency, double> _outstandingLoans = _emptyTotals();
+  Map<AppCurrency, double> _outstandingAdvances = _emptyTotals();
+  Map<AppCurrency, double> _owedByCustomers = _emptyTotals();
+  Map<AppCurrency, double> _monthCashOut = _emptyTotals();
+  Map<AppCurrency, double> _monthBills = _emptyTotals();
+  Map<AppCurrency, double> _monthPayroll = _emptyTotals();
+  Map<AppCurrency, double> _monthAdvancesGiven = _emptyTotals();
+  Map<AppCurrency, double> _monthRevenue = _emptyTotals();
+  Map<AppCurrency, double> _monthHarvestValue = _emptyTotals();
   String? _pettyCashId;
   String? _revenueAccountId;
 
@@ -95,7 +95,7 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
       _name = profile['name'] as String?;
       _role = profile['role'] as String?;
 
-      // 2. Opening balance
+      // 2. Opening balance (USD only - see settings table note in claude.md)
       final settingsRow = await supabase
           .from('settings')
           .select()
@@ -112,12 +112,15 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
           .single();
       final transfersIn = await supabase
           .from('account_transactions')
-          .select('amount')
+          .select('amount, currency')
           .eq('account_id', pettyCashAccount['id'])
           .eq('type', 'transfer_in');
-      double pettyCashTransfersIn = 0;
+      final pettyCashTransfersIn = _emptyTotals();
       for (final t in transfersIn) {
-        pettyCashTransfersIn += (t['amount'] as num).toDouble();
+        final currency = AppCurrency.fromCode(t['currency'] as String?);
+        pettyCashTransfersIn[currency] =
+            (pettyCashTransfersIn[currency] ?? 0) +
+            (t['amount'] as num).toDouble();
       }
 
       // 3. All transactions (fine for small volume; we'll optimize later if needed)
@@ -127,10 +130,10 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
       // harvest sales value.
       final harvests = await supabase
           .from('harvests')
-          .select('kg_harvested, price_per_kg, harvest_date');
+          .select('kg_harvested, price_per_kg, harvest_date, currency');
       final customerPayments = await supabase
           .from('customer_payments')
-          .select('amount');
+          .select('amount, currency');
 
       // 5. Revenue account fund_add rows -> this month's revenue collected
       // (includes harvest sale payments; see customer_payments service).
@@ -141,97 +144,122 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
           .single();
       final revenueAdds = await supabase
           .from('account_transactions')
-          .select('amount, transaction_date')
+          .select('amount, transaction_date, currency')
           .eq('account_id', revenueAccount['id'])
           .eq('type', 'fund_add');
 
-      double cash = opening + pettyCashTransfersIn;
-      double loansOut = 0;
-      double loansRepaid = 0;
-      double advancesOut = 0;
-      double advancesCleared = 0;
-      double monthCashOut = 0;
+      final cash = _emptyTotals();
+      cash[AppCurrency.usd] = (cash[AppCurrency.usd] ?? 0) + opening;
+      for (final c in AppCurrency.values) {
+        cash[c] = (cash[c] ?? 0) + (pettyCashTransfersIn[c] ?? 0);
+      }
+      final loansOut = _emptyTotals();
+      final loansRepaid = _emptyTotals();
+      final advancesOut = _emptyTotals();
+      final advancesCleared = _emptyTotals();
+      final monthCashOut = _emptyTotals();
 
       final now = DateTime.now();
-      double monthBills = 0;
-      double monthPayroll = 0;
-      double monthAdvances = 0;
+      final monthBills = _emptyTotals();
+      final monthPayroll = _emptyTotals();
+      final monthAdvances = _emptyTotals();
 
       for (final t in txns) {
         final type = t['type'] as String;
+        final currency = AppCurrency.fromCode(t['currency'] as String?);
         final amount = (t['amount'] as num).toDouble();
         final date = DateTime.parse(t['transaction_date'] as String);
         final isThisMonth = date.year == now.year && date.month == now.month;
 
         switch (type) {
           case 'expense':
-            cash -= amount;
+            cash[currency] = (cash[currency] ?? 0) - amount;
             if (isThisMonth) {
-              monthBills += amount;
-              monthCashOut += amount;
+              monthBills[currency] = (monthBills[currency] ?? 0) + amount;
+              monthCashOut[currency] = (monthCashOut[currency] ?? 0) + amount;
             }
             break;
           case 'payroll':
-            cash -= amount;
+            cash[currency] = (cash[currency] ?? 0) - amount;
             if (isThisMonth) {
-              monthPayroll += amount;
-              monthCashOut += amount;
+              monthPayroll[currency] = (monthPayroll[currency] ?? 0) + amount;
+              monthCashOut[currency] = (monthCashOut[currency] ?? 0) + amount;
             }
             break;
           case 'loan':
-            cash -= amount;
-            loansOut += amount;
-            if (isThisMonth) monthCashOut += amount;
+            cash[currency] = (cash[currency] ?? 0) - amount;
+            loansOut[currency] = (loansOut[currency] ?? 0) + amount;
+            if (isThisMonth) {
+              monthCashOut[currency] = (monthCashOut[currency] ?? 0) + amount;
+            }
             break;
           case 'advance':
-            cash -= amount;
-            advancesOut += amount;
+            cash[currency] = (cash[currency] ?? 0) - amount;
+            advancesOut[currency] = (advancesOut[currency] ?? 0) + amount;
             if (isThisMonth) {
-              monthAdvances += amount;
-              monthCashOut += amount;
+              monthAdvances[currency] = (monthAdvances[currency] ?? 0) + amount;
+              monthCashOut[currency] = (monthCashOut[currency] ?? 0) + amount;
             }
             break;
           case 'loan_repayment':
-            cash += amount;
-            loansRepaid += amount;
+            cash[currency] = (cash[currency] ?? 0) + amount;
+            loansRepaid[currency] = (loansRepaid[currency] ?? 0) + amount;
             break;
           case 'advance_deduction':
-            advancesCleared += amount; // no cash impact
+            advancesCleared[currency] =
+                (advancesCleared[currency] ?? 0) + amount; // no cash impact
             break;
         }
       }
 
-      double harvestTotalValue = 0;
-      double monthHarvestValue = 0;
+      final harvestTotalValue = _emptyTotals();
+      final monthHarvestValue = _emptyTotals();
       for (final h in harvests) {
+        final currency = AppCurrency.fromCode(h['currency'] as String?);
         final value =
             (h['kg_harvested'] as num).toDouble() *
             (h['price_per_kg'] as num).toDouble();
-        harvestTotalValue += value;
+        harvestTotalValue[currency] =
+            (harvestTotalValue[currency] ?? 0) + value;
         final date = DateTime.parse(h['harvest_date'] as String);
         if (date.year == now.year && date.month == now.month) {
-          monthHarvestValue += value;
+          monthHarvestValue[currency] =
+              (monthHarvestValue[currency] ?? 0) + value;
         }
       }
-      double totalPaidByCustomers = 0;
+      final totalPaidByCustomers = _emptyTotals();
       for (final p in customerPayments) {
-        totalPaidByCustomers += (p['amount'] as num).toDouble();
+        final currency = AppCurrency.fromCode(p['currency'] as String?);
+        totalPaidByCustomers[currency] =
+            (totalPaidByCustomers[currency] ?? 0) +
+            (p['amount'] as num).toDouble();
       }
 
-      double monthRevenue = 0;
+      final monthRevenue = _emptyTotals();
       for (final r in revenueAdds) {
         final date = DateTime.parse(r['transaction_date'] as String);
         if (date.year == now.year && date.month == now.month) {
-          monthRevenue += (r['amount'] as num).toDouble();
+          final currency = AppCurrency.fromCode(r['currency'] as String?);
+          monthRevenue[currency] =
+              (monthRevenue[currency] ?? 0) + (r['amount'] as num).toDouble();
         }
       }
 
       if (!mounted) return;
       setState(() {
         _cashOnHand = cash;
-        _outstandingLoans = loansOut - loansRepaid;
-        _outstandingAdvances = advancesOut - advancesCleared;
-        _owedByCustomers = harvestTotalValue - totalPaidByCustomers;
+        _outstandingLoans = {
+          for (final c in AppCurrency.values)
+            c: (loansOut[c] ?? 0) - (loansRepaid[c] ?? 0),
+        };
+        _outstandingAdvances = {
+          for (final c in AppCurrency.values)
+            c: (advancesOut[c] ?? 0) - (advancesCleared[c] ?? 0),
+        };
+        _owedByCustomers = {
+          for (final c in AppCurrency.values)
+            c: (harvestTotalValue[c] ?? 0) - (totalPaidByCustomers[c] ?? 0),
+        };
         _monthCashOut = monthCashOut;
         _monthBills = monthBills;
         _monthPayroll = monthPayroll;
@@ -306,12 +334,21 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                   const SizedBox(height: 14),
 
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Expanded(
                         child: StatTile(
                           icon: Icons.handshake_outlined,
                           label: 'Owed by partners',
-                          value: _formatCurrency(_outstandingLoans),
+                          valueWidget: DualCurrencyStat(
+                            amounts: _outstandingLoans,
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.ink,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
                           color: AppColors.loan,
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute(
@@ -325,7 +362,15 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                         child: StatTile(
                           icon: Icons.person_outline,
                           label: 'Owed by staff',
-                          value: _formatCurrency(_outstandingAdvances),
+                          valueWidget: DualCurrencyStat(
+                            amounts: _outstandingAdvances,
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.ink,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
                           color: AppColors.advance,
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute(
@@ -338,12 +383,21 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                   ),
                   const SizedBox(height: 12),
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Expanded(
                         child: StatTile(
                           icon: Icons.groups_outlined,
                           label: 'Owed by customers',
-                          value: _formatCurrency(_owedByCustomers),
+                          valueWidget: DualCurrencyStat(
+                            amounts: _owedByCustomers,
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.ink,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
                           color: AppColors.brandGreenLight,
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute(
@@ -357,7 +411,15 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                         child: StatTile(
                           icon: Icons.calendar_month_outlined,
                           label: 'This month\'s cash out',
-                          value: _formatCurrency(_monthCashOut),
+                          valueWidget: DualCurrencyStat(
+                            amounts: _monthCashOut,
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.ink,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
                           color: AppColors.brandNavy,
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute(
@@ -657,8 +719,9 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                         FittedBox(
                           fit: BoxFit.scaleDown,
                           alignment: Alignment.centerLeft,
-                          child: Text(
-                            _formatCurrency(_cashOnHand),
+                          child: DualCurrencyStat(
+                            amounts: _cashOnHand,
+                            spacing: 4,
                             style: const TextStyle(
                               fontSize: 36,
                               fontWeight: FontWeight.w800,
@@ -682,7 +745,7 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
   Widget _monthRow(
     IconData icon,
     String label,
-    double value,
+    Map<AppCurrency, double> amounts,
     Color color, {
     VoidCallback? onTap,
   }) {
@@ -702,8 +765,9 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
               ),
             ),
           ),
-          Text(
-            _formatCurrency(value),
+          DualCurrencyStat(
+            amounts: amounts,
+            crossAxisAlignment: CrossAxisAlignment.end,
             style: const TextStyle(
               fontSize: 14.5,
               fontWeight: FontWeight.w700,

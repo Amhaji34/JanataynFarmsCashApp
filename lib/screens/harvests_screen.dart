@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../main.dart';
 import '../theme/app_theme.dart';
+import '../utils/currency.dart';
 import '../widgets/app_ui.dart';
 import 'add_harvest_screen.dart';
 
 /// Every harvest logged, newest first, with summary stats (how many
 /// harvests, total kg, total value, how much of that has been collected).
 /// Each harvest doubles as its sale record - see add_harvest_screen.dart.
+/// Value/outstanding are tracked per currency - never blended.
 class HarvestsScreen extends StatefulWidget {
   const HarvestsScreen({super.key});
 
@@ -19,10 +21,9 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
   bool _loading = true;
   String? _errorMessage;
   List<Map<String, dynamic>> _harvests = [];
-  Map<String, double> _paidByCustomer = {};
+  Map<AppCurrency, double> _paidTotals = {};
   String? _role;
 
-  final _currency = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
   final _dateFormat = DateFormat('MMM d, yyyy');
 
   @override
@@ -52,17 +53,17 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
 
       final paymentsData = await supabase
           .from('customer_payments')
-          .select('customer_id, amount');
-      final paidByCustomer = <String, double>{};
+          .select('amount, currency');
+      final paidTotals = {for (final c in AppCurrency.values) c: 0.0};
       for (final p in List<Map<String, dynamic>>.from(paymentsData)) {
-        final id = p['customer_id'] as String;
-        paidByCustomer[id] =
-            (paidByCustomer[id] ?? 0) + (p['amount'] as num).toDouble();
+        final currency = AppCurrency.fromCode(p['currency'] as String?);
+        paidTotals[currency] =
+            (paidTotals[currency] ?? 0) + (p['amount'] as num).toDouble();
       }
 
       setState(() {
         _harvests = List<Map<String, dynamic>>.from(harvestsData);
-        _paidByCustomer = paidByCustomer;
+        _paidTotals = paidTotals;
         _loading = false;
       });
     } catch (e) {
@@ -78,18 +79,25 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
     (sum, h) => sum + (h['kg_harvested'] as num).toDouble(),
   );
 
-  double get _totalValue => _harvests.fold(
-    0,
-    (sum, h) =>
-        sum +
-        (h['kg_harvested'] as num).toDouble() *
-            (h['price_per_kg'] as num).toDouble(),
-  );
+  Map<AppCurrency, double> get _totalValueByCurrency {
+    final totals = {for (final c in AppCurrency.values) c: 0.0};
+    for (final h in _harvests) {
+      final currency = AppCurrency.fromCode(h['currency'] as String?);
+      totals[currency] =
+          (totals[currency] ?? 0) +
+          (h['kg_harvested'] as num).toDouble() *
+              (h['price_per_kg'] as num).toDouble();
+    }
+    return totals;
+  }
 
-  double get _totalPaid =>
-      _paidByCustomer.values.fold(0, (sum, v) => sum + v);
-
-  double get _totalOutstanding => _totalValue - _totalPaid;
+  Map<AppCurrency, double> get _totalOutstandingByCurrency {
+    final value = _totalValueByCurrency;
+    return {
+      for (final c in AppCurrency.values)
+        c: (value[c] ?? 0) - (_paidTotals[c] ?? 0),
+    };
+  }
 
   Future<void> _openAddHarvest() async {
     final result = await Navigator.of(
@@ -147,22 +155,79 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                   ),
                   const SizedBox(height: 12),
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Expanded(
-                        child: StatTile(
-                          icon: Icons.attach_money,
-                          label: 'Total value',
-                          value: _currency.format(_totalValue),
-                          color: AppColors.cashIn,
+                        child: AppCard(
+                          accent: AppColors.cashIn,
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              IconBadge(
+                                icon: Icons.attach_money,
+                                color: AppColors.cashIn,
+                                size: 34,
+                                iconSize: 17,
+                              ),
+                              const SizedBox(height: 10),
+                              const Text(
+                                'Total value',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.inkSecondary,
+                                  height: 1.25,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              DualCurrencyStat(
+                                amounts: _totalValueByCurrency,
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.ink,
+                                  letterSpacing: -0.3,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: StatTile(
-                          icon: Icons.pending_outlined,
-                          label: 'Total outstanding',
-                          value: _currency.format(_totalOutstanding),
-                          color: AppColors.expense,
+                        child: AppCard(
+                          accent: AppColors.expense,
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              IconBadge(
+                                icon: Icons.pending_outlined,
+                                color: AppColors.expense,
+                                size: 34,
+                                iconSize: 17,
+                              ),
+                              const SizedBox(height: 10),
+                              const Text(
+                                'Total outstanding',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.inkSecondary,
+                                  height: 1.25,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              DualCurrencyStat(
+                                amounts: _totalOutstandingByCurrency,
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.ink,
+                                  letterSpacing: -0.3,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],
@@ -182,11 +247,12 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                       final kg = (h['kg_harvested'] as num).toDouble();
                       final pricePerKg = (h['price_per_kg'] as num).toDouble();
                       final total = kg * pricePerKg;
+                      final currency = AppCurrency.fromCode(
+                        h['currency'] as String?,
+                      );
                       final customerName =
                           h['customers']?['name'] as String? ?? 'Unknown';
-                      final date = DateTime.parse(
-                        h['harvest_date'] as String,
-                      );
+                      final date = DateTime.parse(h['harvest_date'] as String);
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 10),
                         child: AppCard(
@@ -203,8 +269,7 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       customerName,
@@ -216,7 +281,7 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                                     ),
                                     const SizedBox(height: 3),
                                     Text(
-                                      '${kg.toStringAsFixed(1)} kg @ ${_currency.format(pricePerKg)}/kg',
+                                      '${kg.toStringAsFixed(1)} kg @ ${formatMoney(pricePerKg, currency)}/kg',
                                       style: const TextStyle(
                                         fontSize: 12,
                                         color: AppColors.inkMuted,
@@ -234,7 +299,7 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                                 ),
                               ),
                               Text(
-                                _currency.format(total),
+                                formatMoney(total, currency),
                                 style: const TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w700,

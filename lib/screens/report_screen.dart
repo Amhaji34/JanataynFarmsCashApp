@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../main.dart';
 import '../theme/app_theme.dart';
+import '../utils/currency.dart';
 import '../widgets/app_ui.dart';
 
 class ReportScreen extends StatefulWidget {
@@ -35,8 +36,8 @@ class _ReportScreenState extends State<ReportScreen> {
   String? _selectedPartnerId;
   String? _selectedCategoryName;
   late DateTimeRange? _dateRange = widget.initialDateRange;
+  AppCurrency _selectedCurrency = AppCurrency.usd;
 
-  final _currency = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
   final _dateFormat = DateFormat('MMM d, yyyy');
   final _monthLabelFormat = DateFormat('MMM');
 
@@ -123,6 +124,9 @@ class _ReportScreenState extends State<ReportScreen> {
     return _transactions.where((t) {
       if (!types.contains(t['type'])) return false;
       if (!_matchesDate(t)) return false;
+      if (AppCurrency.fromCode(t['currency'] as String?) != _selectedCurrency) {
+        return false;
+      }
 
       if (_selectedAccount == 'Payroll' || _selectedAccount == 'Advances') {
         if (_selectedStaffId != null &&
@@ -416,7 +420,7 @@ class _ReportScreenState extends State<ReportScreen> {
             getTooltipColor: (_) => AppColors.ink,
             getTooltipItem: (group, groupIndex, rod, rodIndex) =>
                 BarTooltipItem(
-                  _currency.format(rod.toY),
+                  formatMoney(rod.toY, _selectedCurrency),
                   const TextStyle(
                     color: Colors.white,
                     fontSize: 12,
@@ -550,6 +554,19 @@ class _ReportScreenState extends State<ReportScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
+
+                // Currency toggle - a bar chart can't sensibly overlay two
+                // currencies on one axis, so Reports always views one
+                // currency at a time (this narrows the summary cards and
+                // both charts).
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: CurrencyToggle(
+                    value: _selectedCurrency,
+                    onChanged: (value) =>
+                        setState(() => _selectedCurrency = value),
+                  ),
+                ),
 
                 // Filters
                 Padding(
@@ -686,7 +703,7 @@ class _ReportScreenState extends State<ReportScreen> {
                             ),
                             const SizedBox(height: 7),
                             Text(
-                              _currency.format(e.value),
+                              formatMoney(e.value, _selectedCurrency),
                               style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w700,
@@ -790,8 +807,8 @@ class _ReportScreenState extends State<ReportScreen> {
                                   ),
                                   Text(
                                     isNeutral
-                                        ? _currency.format(amount)
-                                        : '${isIn ? '+' : '-'}${_currency.format(amount)}',
+                                        ? formatMoney(amount, _selectedCurrency)
+                                        : '${isIn ? '+' : '-'}${formatMoney(amount, _selectedCurrency)}',
                                     style: TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w700,

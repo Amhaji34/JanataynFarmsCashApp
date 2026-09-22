@@ -2,22 +2,27 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/customer_payments.dart';
 import '../theme/app_theme.dart';
+import '../utils/currency.dart';
 import '../widgets/app_ui.dart';
 
 /// Records a payment from a customer against their outstanding balance.
-/// The amount also feeds the Revenue funding account (see
+/// A customer can owe in either currency (or both, if they've had
+/// harvests priced differently over time), so this screen picks which
+/// currency's balance is being paid down and validates against that
+/// currency's own figure — never a blended total. The amount also feeds
+/// the Revenue funding account in the same currency (see
 /// services/customer_payments.dart).
 class RecordPaymentScreen extends StatefulWidget {
   const RecordPaymentScreen({
     super.key,
     required this.customerId,
     required this.customerName,
-    required this.outstanding,
+    required this.outstandingByCurrency,
   });
 
   final String customerId;
   final String customerName;
-  final double outstanding;
+  final Map<AppCurrency, double> outstandingByCurrency;
 
   @override
   State<RecordPaymentScreen> createState() => _RecordPaymentScreenState();
@@ -28,10 +33,24 @@ class _RecordPaymentScreenState extends State<RecordPaymentScreen> {
   final _noteController = TextEditingController();
   DateTime _selectedDate = DateTime.now();
   final _dateFormat = DateFormat('MMM d, yyyy');
-  final _currency = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
+  late AppCurrency _selectedCurrency = _initialCurrency();
 
   bool _saving = false;
   String? _errorMessage;
+
+  /// Defaults to whichever currency the customer actually owes in, so the
+  /// common case (owing in only one currency) needs no extra tap.
+  AppCurrency _initialCurrency() {
+    for (final currency in AppCurrency.values) {
+      if ((widget.outstandingByCurrency[currency] ?? 0) > 0.01) {
+        return currency;
+      }
+    }
+    return AppCurrency.usd;
+  }
+
+  double get _outstanding =>
+      widget.outstandingByCurrency[_selectedCurrency] ?? 0;
 
   @override
   void dispose() {
@@ -58,10 +77,11 @@ class _RecordPaymentScreenState extends State<RecordPaymentScreen> {
       setState(() => _errorMessage = 'Enter an amount greater than zero.');
       return;
     }
-    if (amount > widget.outstanding + 0.01) {
+    if (amount > _outstanding + 0.01) {
       setState(
         () => _errorMessage =
-            '${widget.customerName} only owes ${_currency.format(widget.outstanding)}.',
+            '${widget.customerName} only owes '
+            '${formatMoney(_outstanding, _selectedCurrency)}.',
       );
       return;
     }
@@ -72,6 +92,7 @@ class _RecordPaymentScreenState extends State<RecordPaymentScreen> {
         customerId: widget.customerId,
         amount: amount,
         date: _selectedDate,
+        currency: _selectedCurrency,
         note: _noteController.text.trim(),
       );
       if (mounted) Navigator.of(context).pop(true);
@@ -94,7 +115,9 @@ class _RecordPaymentScreenState extends State<RecordPaymentScreen> {
             decoration: BoxDecoration(
               color: AppColors.expense.withValues(alpha: 0.07),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.expense.withValues(alpha: 0.2)),
+              border: Border.all(
+                color: AppColors.expense.withValues(alpha: 0.2),
+              ),
             ),
             child: Row(
               children: [
@@ -106,7 +129,8 @@ class _RecordPaymentScreenState extends State<RecordPaymentScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '${widget.customerName} owes ${_currency.format(widget.outstanding)}',
+                    '${widget.customerName} owes '
+                    '${formatMoney(_outstanding, _selectedCurrency)}',
                     style: const TextStyle(
                       fontSize: 13.5,
                       fontWeight: FontWeight.w700,
@@ -116,6 +140,14 @@ class _RecordPaymentScreenState extends State<RecordPaymentScreen> {
                 ),
               ],
             ),
+          ),
+          const SizedBox(height: 20),
+
+          const SectionLabel('CURRENCY'),
+          const SizedBox(height: 8),
+          CurrencyToggle(
+            value: _selectedCurrency,
+            onChanged: (value) => setState(() => _selectedCurrency = value),
           ),
           const SizedBox(height: 20),
 
@@ -172,10 +204,10 @@ class _RecordPaymentScreenState extends State<RecordPaymentScreen> {
             controller: _amountController,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
-            decoration: const InputDecoration(
-              hintText: '\$0.00',
-              prefixText: '\$ ',
-              prefixStyle: TextStyle(
+            decoration: InputDecoration(
+              hintText: '${_selectedCurrency.symbol}0',
+              prefixText: '${_selectedCurrency.symbol} ',
+              prefixStyle: const TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.w700,
                 color: AppColors.ink,

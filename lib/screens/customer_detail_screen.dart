@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../main.dart';
 import '../theme/app_theme.dart';
+import '../utils/currency.dart';
 import '../widgets/app_ui.dart';
 import 'record_payment_screen.dart';
 
@@ -11,6 +12,7 @@ class _Entry {
     required this.label,
     required this.subtitle,
     required this.amount,
+    required this.currency,
     required this.isPositive,
     required this.color,
     required this.icon,
@@ -20,6 +22,7 @@ class _Entry {
   final String label;
   final String subtitle;
   final double amount;
+  final AppCurrency currency;
   final bool isPositive;
   final Color color;
   final IconData icon;
@@ -27,7 +30,9 @@ class _Entry {
 
 /// One customer's balance and full history: every harvest sold to them
 /// (increases what they owe) and every payment they've made (reduces
-/// it), merged and sorted newest first.
+/// it), merged and sorted newest first. A customer can owe in either
+/// currency (or both) so the balance is tracked per currency throughout
+/// — never blended into one converted number.
 class CustomerDetailScreen extends StatefulWidget {
   const CustomerDetailScreen({
     super.key,
@@ -47,11 +52,10 @@ class CustomerDetailScreen extends StatefulWidget {
 class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
   bool _loading = true;
   String? _errorMessage;
-  double _owed = 0;
+  Map<AppCurrency, double> _owed = {};
   List<_Entry> _entries = [];
   String? _role;
 
-  final _currency = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
   final _dateFormat = DateFormat('MMM d, yyyy');
 
   @override
@@ -86,21 +90,24 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
           .eq('customer_id', widget.customerId);
       final payments = List<Map<String, dynamic>>.from(paymentsData);
 
-      double sold = 0;
-      double paid = 0;
+      final sold = {for (final c in AppCurrency.values) c: 0.0};
+      final paid = {for (final c in AppCurrency.values) c: 0.0};
       final entries = <_Entry>[];
 
       for (final h in harvests) {
         final kg = (h['kg_harvested'] as num).toDouble();
         final pricePerKg = (h['price_per_kg'] as num).toDouble();
         final total = kg * pricePerKg;
-        sold += total;
+        final currency = AppCurrency.fromCode(h['currency'] as String?);
+        sold[currency] = (sold[currency] ?? 0) + total;
         entries.add(
           _Entry(
             date: DateTime.parse(h['harvest_date'] as String),
             label: 'Harvest sale',
-            subtitle: '${kg.toStringAsFixed(1)} kg @ ${_currency.format(pricePerKg)}/kg',
+            subtitle:
+                '${kg.toStringAsFixed(1)} kg @ ${formatMoney(pricePerKg, currency)}/kg',
             amount: total,
+            currency: currency,
             isPositive: false,
             color: AppColors.brandGreenLight,
             icon: Icons.eco_outlined,
@@ -110,7 +117,8 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
 
       for (final p in payments) {
         final amount = (p['amount'] as num).toDouble();
-        paid += amount;
+        final currency = AppCurrency.fromCode(p['currency'] as String?);
+        paid[currency] = (paid[currency] ?? 0) + amount;
         entries.add(
           _Entry(
             date: DateTime.parse(p['payment_date'] as String),
@@ -119,6 +127,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                 ? (p['note'] as String).trim()
                 : 'Paid toward balance',
             amount: amount,
+            currency: currency,
             isPositive: true,
             color: AppColors.cashIn,
             icon: Icons.check_circle_outline,
@@ -129,7 +138,10 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
       entries.sort((a, b) => b.date.compareTo(a.date));
 
       setState(() {
-        _owed = sold - paid;
+        _owed = {
+          for (final c in AppCurrency.values)
+            c: (sold[c] ?? 0) - (paid[c] ?? 0),
+        };
         _entries = entries;
         _loading = false;
       });
@@ -147,7 +159,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
         builder: (_) => RecordPaymentScreen(
           customerId: widget.customerId,
           customerName: widget.customerName,
-          outstanding: _owed,
+          outstandingByCurrency: _owed,
         ),
       ),
     );
@@ -156,7 +168,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final hasDebt = _owed > 0.01;
+    final hasDebt = _owed.values.any((v) => v > 0.01);
 
     return Scaffold(
       appBar: AppBar(title: Text(widget.customerName)),
@@ -198,14 +210,18 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        Text(
-                          _currency.format(_owed.abs()),
+                        DualCurrencyStat(
+                          amounts: {
+                            for (final c in AppCurrency.values)
+                              c: (_owed[c] ?? 0).abs(),
+                          },
                           style: const TextStyle(
                             fontSize: 28,
                             fontWeight: FontWeight.w800,
                             letterSpacing: -0.6,
                             color: AppColors.ink,
                           ),
+                          spacing: 4,
                         ),
                         if (widget.customerPhone != null &&
                             widget.customerPhone!.isNotEmpty) ...[
@@ -257,8 +273,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       e.label,
@@ -288,7 +303,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                                 ),
                               ),
                               Text(
-                                '${e.isPositive ? '+' : '-'}${_currency.format(e.amount)}',
+                                '${e.isPositive ? '+' : '-'}${formatMoney(e.amount, e.currency)}',
                                 style: TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w700,

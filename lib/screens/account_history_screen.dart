@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../main.dart';
 import '../theme/app_theme.dart';
+import '../utils/currency.dart';
 import '../widgets/app_ui.dart';
 
 /// Which of the two summary totals (if any) an entry counts toward.
@@ -13,6 +14,7 @@ class _Entry {
     required this.createdAt,
     required this.label,
     required this.amount,
+    required this.currency,
     required this.isPositive,
     required this.color,
     required this.icon,
@@ -23,14 +25,17 @@ class _Entry {
   final DateTime createdAt;
   final String label;
   final double amount;
+  final AppCurrency currency;
   final bool isPositive;
   final Color color;
   final IconData icon;
   final _EntryKind kind;
 
-  /// Running account balance immediately after this entry, computed once
-  /// entries are known in chronological order. Not part of the constructor
-  /// since it depends on every other entry, not just this one.
+  /// Running balance, in this entry's own currency, immediately after
+  /// this entry - computed once entries are known in chronological
+  /// order. A SLSH entry never moves the USD running balance and vice
+  /// versa, so each currency's running total is tracked independently
+  /// even though both currencies' entries share one timeline.
   double balanceAfter = 0;
 }
 
@@ -38,6 +43,8 @@ class _Entry {
 /// the main `transactions` table (expenses, payroll, loans, advances,
 /// repayments) since that's what actually moves its balance day to day;
 /// the other three accounts only ever see fund_add / transfer_out rows.
+/// Every balance/total here is tracked per currency - USD and SLSH never
+/// mix.
 class AccountHistoryScreen extends StatefulWidget {
   const AccountHistoryScreen({
     super.key,
@@ -57,11 +64,10 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
 
   bool _loading = true;
   String? _errorMessage;
-  double _balance = 0;
+  Map<AppCurrency, double> _balances = {};
   List<_Entry> _entries = [];
   DateTimeRange? _dateRange;
 
-  final _currency = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
   final _dateFormat = DateFormat('MMM d, yyyy');
 
   @override
@@ -86,27 +92,29 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
       59,
     );
     return _entries
-        .where(
-          (e) =>
-              !e.date.isBefore(start) && !e.date.isAfter(end),
-        )
+        .where((e) => !e.date.isBefore(start) && !e.date.isAfter(end))
         .toList();
   }
 
-  double get _totalAdded => _filteredEntries
-      .where((e) => e.kind == _EntryKind.fundAdd)
-      .fold(0, (sum, e) => sum + e.amount);
+  Map<AppCurrency, double> _sumByCurrency(bool Function(_Entry) matches) {
+    final totals = {for (final c in AppCurrency.values) c: 0.0};
+    for (final e in _filteredEntries.where(matches)) {
+      totals[e.currency] = (totals[e.currency] ?? 0) + e.amount;
+    }
+    return totals;
+  }
+
+  Map<AppCurrency, double> get _totalAdded =>
+      _sumByCurrency((e) => e.kind == _EntryKind.fundAdd);
 
   /// Petty Cash never has fund_add rows, so "Total added" is meaningless
   /// there - this sums the actual outflows (expense/payroll/loan/advance)
   /// instead.
-  double get _totalSpent => _filteredEntries
-      .where((e) => e.kind == _EntryKind.other && !e.isPositive)
-      .fold(0, (sum, e) => sum + e.amount);
+  Map<AppCurrency, double> get _totalSpent =>
+      _sumByCurrency((e) => e.kind == _EntryKind.other && !e.isPositive);
 
-  double get _totalTransferred => _filteredEntries
-      .where((e) => e.kind == _EntryKind.transfer)
-      .fold(0, (sum, e) => sum + e.amount);
+  Map<AppCurrency, double> get _totalTransferred =>
+      _sumByCurrency((e) => e.kind == _EntryKind.transfer);
 
   Future<void> _pickDateRange() async {
     final picked = await showDateRangePicker(
@@ -139,6 +147,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
 
       for (final t in ledger) {
         final amount = (t['amount'] as num).toDouble();
+        final currency = AppCurrency.fromCode(t['currency'] as String?);
         final date = DateTime.parse(t['transaction_date'] as String);
         final createdAt = DateTime.parse(t['created_at'] as String);
         final type = t['type'] as String;
@@ -152,6 +161,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                 createdAt: createdAt,
                 label: 'Funds added',
                 amount: amount,
+                currency: currency,
                 isPositive: true,
                 color: AppColors.cashIn,
                 icon: Icons.add,
@@ -166,6 +176,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                 createdAt: createdAt,
                 label: 'Transferred to ${relatedName ?? 'Petty Cash'}',
                 amount: amount,
+                currency: currency,
                 isPositive: false,
                 color: AppColors.brandNavy,
                 icon: Icons.arrow_upward,
@@ -180,6 +191,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                 createdAt: createdAt,
                 label: 'Transfer from ${relatedName ?? 'another account'}',
                 amount: amount,
+                currency: currency,
                 isPositive: true,
                 color: AppColors.cashIn,
                 icon: Icons.arrow_downward,
@@ -190,18 +202,20 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
         }
       }
 
-      double openingBalance = 0;
+      final openingBalances = {for (final c in AppCurrency.values) c: 0.0};
       if (_isPettyCash) {
         final settingsRow = await supabase
             .from('settings')
             .select()
             .eq('key', 'opening_balance')
             .single();
-        openingBalance = (settingsRow['value'] as num).toDouble();
+        openingBalances[AppCurrency.usd] = (settingsRow['value'] as num)
+            .toDouble();
 
         final txnsData = await supabase.from('transactions').select();
         for (final t in List<Map<String, dynamic>>.from(txnsData)) {
           final amount = (t['amount'] as num).toDouble();
+          final currency = AppCurrency.fromCode(t['currency'] as String?);
           final date = DateTime.parse(t['transaction_date'] as String);
           final createdAt = DateTime.parse(t['created_at'] as String);
           final type = t['type'] as String;
@@ -214,6 +228,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                   createdAt: createdAt,
                   label: 'Expense',
                   amount: amount,
+                  currency: currency,
                   isPositive: false,
                   color: AppColors.expense,
                   icon: Icons.receipt_long_outlined,
@@ -228,6 +243,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                   createdAt: createdAt,
                   label: 'Payroll',
                   amount: amount,
+                  currency: currency,
                   isPositive: false,
                   color: AppColors.payroll,
                   icon: Icons.payments_outlined,
@@ -242,6 +258,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                   createdAt: createdAt,
                   label: 'Loan given',
                   amount: amount,
+                  currency: currency,
                   isPositive: false,
                   color: AppColors.loan,
                   icon: Icons.pan_tool_outlined,
@@ -256,6 +273,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                   createdAt: createdAt,
                   label: 'Advance given',
                   amount: amount,
+                  currency: currency,
                   isPositive: false,
                   color: AppColors.advance,
                   icon: Icons.pan_tool_alt_outlined,
@@ -270,6 +288,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                   createdAt: createdAt,
                   label: 'Loan repayment received',
                   amount: amount,
+                  currency: currency,
                   isPositive: true,
                   color: AppColors.cashIn,
                   icon: Icons.south_west,
@@ -283,22 +302,25 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
       }
 
       // Chronological (oldest first) so the running balance is meaningful,
-      // then tag each entry with the balance immediately after it.
+      // then tag each entry with the balance immediately after it - one
+      // running total per currency, tracked independently.
       entries.sort((a, b) {
         final byDate = a.date.compareTo(b.date);
         return byDate != 0 ? byDate : a.createdAt.compareTo(b.createdAt);
       });
 
-      double running = openingBalance;
+      final running = Map<AppCurrency, double>.from(openingBalances);
       for (final e in entries) {
-        running += e.isPositive ? e.amount : -e.amount;
-        e.balanceAfter = running;
+        final updated =
+            (running[e.currency] ?? 0) + (e.isPositive ? e.amount : -e.amount);
+        running[e.currency] = updated;
+        e.balanceAfter = updated;
       }
 
       final displayEntries = entries.reversed.toList();
 
       setState(() {
-        _balance = running;
+        _balances = running;
         _entries = displayEntries;
         _loading = false;
       });
@@ -353,14 +375,15 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        Text(
-                          _currency.format(_balance),
+                        DualCurrencyStat(
+                          amounts: _balances,
                           style: const TextStyle(
                             fontSize: 28,
                             fontWeight: FontWeight.w800,
                             letterSpacing: -0.6,
                             color: AppColors.ink,
                           ),
+                          spacing: 4,
                         ),
                       ],
                     ),
@@ -378,9 +401,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                                 : AppColors.brandGreen,
                             backgroundColor: _dateRange == null
                                 ? AppColors.surface
-                                : AppColors.brandGreen.withValues(
-                                    alpha: 0.08,
-                                  ),
+                                : AppColors.brandGreen.withValues(alpha: 0.08),
                             side: BorderSide(
                               color: _dateRange == null
                                   ? AppColors.hairline
@@ -415,28 +436,24 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                   const SizedBox(height: 12),
 
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Expanded(
-                        child: _isPettyCash
-                            ? StatTile(
-                                icon: Icons.trending_down,
-                                label: 'Total spent',
-                                value: _currency.format(_totalSpent),
-                                color: AppColors.expense,
-                              )
-                            : StatTile(
-                                icon: Icons.add,
-                                label: 'Total added',
-                                value: _currency.format(_totalAdded),
-                                color: AppColors.cashIn,
-                              ),
+                        child: _dualStatCard(
+                          icon: _isPettyCash ? Icons.trending_down : Icons.add,
+                          label: _isPettyCash ? 'Total spent' : 'Total added',
+                          amounts: _isPettyCash ? _totalSpent : _totalAdded,
+                          color: _isPettyCash
+                              ? AppColors.expense
+                              : AppColors.cashIn,
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: StatTile(
+                        child: _dualStatCard(
                           icon: Icons.sync_alt,
                           label: 'Total transferred',
-                          value: _currency.format(_totalTransferred),
+                          amounts: _totalTransferred,
                           color: AppColors.brandNavy,
                         ),
                       ),
@@ -471,8 +488,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       e.label,
@@ -497,7 +513,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
                                   Text(
-                                    '${e.isPositive ? '+' : '-'}${_currency.format(e.amount)}',
+                                    '${e.isPositive ? '+' : '-'}${formatMoney(e.amount, e.currency)}',
                                     style: TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w700,
@@ -507,7 +523,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                                   ),
                                   const SizedBox(height: 3),
                                   Text(
-                                    'Bal: ${_currency.format(e.balanceAfter)}',
+                                    'Bal: ${formatMoney(e.balanceAfter, e.currency)}',
                                     style: const TextStyle(
                                       fontSize: 11.5,
                                       color: AppColors.inkMuted,
@@ -523,6 +539,43 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _dualStatCard({
+    required IconData icon,
+    required String label,
+    required Map<AppCurrency, double> amounts,
+    required Color color,
+  }) {
+    return AppCard(
+      accent: color,
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          IconBadge(icon: icon, color: color, size: 34, iconSize: 17),
+          const SizedBox(height: 10),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.inkSecondary,
+              height: 1.25,
+            ),
+          ),
+          const SizedBox(height: 3),
+          DualCurrencyStat(
+            amounts: amounts,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: color,
+              letterSpacing: -0.3,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

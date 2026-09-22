@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../main.dart';
 import '../theme/app_theme.dart';
+import '../utils/currency.dart';
 import '../widgets/app_ui.dart';
 import 'expense_categories_screen.dart';
 
@@ -45,6 +46,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   DateTime _selectedDate = DateTime.now();
   final _dateFormat = DateFormat('MMM d, yyyy');
   final _dbDateFormat = DateFormat('yyyy-MM-dd');
+
+  AppCurrency _selectedCurrency = AppCurrency.usd;
 
   bool _splitEnabled = false;
   List<_LineItem> _items = [_LineItem()];
@@ -99,6 +102,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       _noteController.text = existing['note'] as String? ?? '';
       _selectedPartnerId = existing['related_partner_id'] as String?;
       _selectedStaffId = existing['related_staff_id'] as String?;
+      _selectedCurrency = AppCurrency.fromCode(existing['currency'] as String?);
 
       final items = List<Map<String, dynamic>>.from(
         existing['transaction_items'] ?? [],
@@ -241,6 +245,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             'related_partner_id': _needsPartner ? _selectedPartnerId : null,
             'related_staff_id': _needsStaff ? _selectedStaffId : null,
             'note': _noteController.text.trim(),
+            'currency': _selectedCurrency.code,
           })
           .select()
           .single();
@@ -435,20 +440,32 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             const SizedBox(height: 20),
           ],
 
+          _sectionLabel('Currency'),
+          const SizedBox(height: 8),
+          CurrencyToggle(
+            value: _selectedCurrency,
+            onChanged: (value) => setState(() => _selectedCurrency = value),
+          ),
+          const SizedBox(height: 20),
+
           _sectionLabel('Total amount'),
           const SizedBox(height: 6),
           TextField(
             controller: _totalController,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
-            decoration: _fieldDecoration(hint: '\$0.00', large: true).copyWith(
-              prefixText: '\$ ',
-              prefixStyle: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-                color: Colors.black,
-              ),
-            ),
+            decoration:
+                _fieldDecoration(
+                  hint: '${_selectedCurrency.symbol}0',
+                  large: true,
+                ).copyWith(
+                  prefixText: '${_selectedCurrency.symbol} ',
+                  prefixStyle: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black,
+                  ),
+                ),
             onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 20),
@@ -532,7 +549,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                     ],
                   ),
                   Text(
-                    '\$${_allocatedAmount.toStringAsFixed(2)} of \$${_totalAmount.toStringAsFixed(2)}',
+                    '${formatMoney(_allocatedAmount, _selectedCurrency)} of '
+                    '${formatMoney(_totalAmount, _selectedCurrency)}',
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
@@ -867,9 +885,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  decoration: const InputDecoration(
-                    hintText: '\$0.00',
-                    prefixText: '\$ ',
+                  decoration: InputDecoration(
+                    hintText: '${_selectedCurrency.symbol}0',
+                    prefixText: '${_selectedCurrency.symbol} ',
                     border: InputBorder.none,
                     enabledBorder: InputBorder.none,
                     focusedBorder: InputBorder.none,

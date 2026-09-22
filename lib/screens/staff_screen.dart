@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../main.dart';
 import '../theme/app_theme.dart';
+import '../utils/currency.dart';
 import '../widgets/app_ui.dart';
 import 'staff_detail_screen.dart';
 
@@ -16,14 +16,13 @@ class _StaffScreenState extends State<StaffScreen> {
   bool _loading = true;
   String? _errorMessage;
   List<Map<String, dynamic>> _staff = [];
-  Map<String, double> _owed = {};
+  Map<String, Map<AppCurrency, double>> _owed = {};
 
   final _nameController = TextEditingController();
   final _salaryController = TextEditingController();
+  AppCurrency _selectedCurrency = AppCurrency.usd;
   bool _adding = false;
   String? _addError;
-
-  final _currency = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
 
   @override
   void initState() {
@@ -46,25 +45,29 @@ class _StaffScreenState extends State<StaffScreen> {
 
       final advanceData = await supabase
           .from('transactions')
-          .select('type, amount, related_staff_id')
+          .select('type, amount, related_staff_id, currency')
           .inFilter('type', ['advance', 'advance_deduction']);
       final advanceTxns = List<Map<String, dynamic>>.from(advanceData);
 
-      final owed = <String, double>{};
+      final owed = <String, Map<AppCurrency, double>>{};
       for (final member in staff) {
         final id = member['id'] as String;
-        double given = 0;
-        double deducted = 0;
+        final given = {for (final c in AppCurrency.values) c: 0.0};
+        final deducted = {for (final c in AppCurrency.values) c: 0.0};
         for (final t in advanceTxns) {
           if (t['related_staff_id'] != id) continue;
+          final currency = AppCurrency.fromCode(t['currency'] as String?);
           final amount = (t['amount'] as num).toDouble();
           if (t['type'] == 'advance') {
-            given += amount;
+            given[currency] = (given[currency] ?? 0) + amount;
           } else {
-            deducted += amount;
+            deducted[currency] = (deducted[currency] ?? 0) + amount;
           }
         }
-        owed[id] = given - deducted;
+        owed[id] = {
+          for (final c in AppCurrency.values)
+            c: (given[c] ?? 0) - (deducted[c] ?? 0),
+        };
       }
 
       setState(() {
@@ -87,6 +90,9 @@ class _StaffScreenState extends State<StaffScreen> {
           staffId: member['id'] as String,
           staffName: member['name'] as String,
           baseSalary: (member['base_salary'] as num).toDouble(),
+          baseSalaryCurrency: AppCurrency.fromCode(
+            member['currency'] as String?,
+          ),
         ),
       ),
     );
@@ -106,6 +112,7 @@ class _StaffScreenState extends State<StaffScreen> {
       await supabase.from('staff').insert({
         'name': name,
         'base_salary': salary,
+        'currency': _selectedCurrency.code,
       });
       _nameController.clear();
       _salaryController.clear();
@@ -147,6 +154,12 @@ class _StaffScreenState extends State<StaffScreen> {
                     ),
                   ),
                   const SizedBox(height: 10),
+                  CurrencyToggle(
+                    value: _selectedCurrency,
+                    onChanged: (value) =>
+                        setState(() => _selectedCurrency = value),
+                  ),
+                  const SizedBox(height: 10),
                   Row(
                     children: [
                       Expanded(
@@ -155,10 +168,10 @@ class _StaffScreenState extends State<StaffScreen> {
                           keyboardType: const TextInputType.numberWithOptions(
                             decimal: true,
                           ),
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             hintText: 'Base salary',
                             isDense: true,
-                            prefixText: '\$ ',
+                            prefixText: '${_selectedCurrency.symbol} ',
                           ),
                           onSubmitted: (_) => _addStaff(),
                         ),
@@ -225,8 +238,11 @@ class _StaffScreenState extends State<StaffScreen> {
                       itemBuilder: (context, index) {
                         final member = _staff[index];
                         final name = member['name'] as String;
-                        final owed = _owed[member['id']] ?? 0;
-                        final hasDebt = owed > 0.01;
+                        final salaryCurrency = AppCurrency.fromCode(
+                          member['currency'] as String?,
+                        );
+                        final owed = _owed[member['id']] ?? {};
+                        final hasDebt = owed.values.any((v) => v > 0.01);
                         return AppCard(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 14,
@@ -251,7 +267,7 @@ class _StaffScreenState extends State<StaffScreen> {
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      'Base salary: ${_currency.format((member['base_salary'] as num).toDouble())}',
+                                      'Base salary: ${formatMoney((member['base_salary'] as num).toDouble(), salaryCurrency)}',
                                       style: const TextStyle(
                                         fontSize: 12,
                                         color: AppColors.inkMuted,
@@ -273,8 +289,12 @@ class _StaffScreenState extends State<StaffScreen> {
                                     ),
                                   ),
                                   const SizedBox(height: 2),
-                                  Text(
-                                    _currency.format(owed.abs()),
+                                  DualCurrencyStat(
+                                    amounts: {
+                                      for (final c in AppCurrency.values)
+                                        c: (owed[c] ?? 0).abs(),
+                                    },
+                                    crossAxisAlignment: CrossAxisAlignment.end,
                                     style: TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w700,

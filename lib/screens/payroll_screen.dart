@@ -2,23 +2,34 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../main.dart';
 import '../theme/app_theme.dart';
+import '../utils/currency.dart';
 import '../widgets/app_ui.dart';
 
-/// Per-staff working state for one payroll run.
+/// Per-staff working state for one payroll run. Each line has its own
+/// currency (defaulting to the staff member's reference currency) since
+/// different staff may be paid in different currencies in the same
+/// batch run.
 class _PayrollLine {
   _PayrollLine({
     required this.staffId,
     required this.name,
     required this.baseSalary,
+    required this.currency,
   }) : repayController = TextEditingController(text: '0.00');
 
   final String staffId;
   final String name;
   final double baseSalary;
 
-  /// Outstanding advance balance (sum(advance) - sum(advance_deduction)),
-  /// fetched once when the screen loads.
-  double owed = 0;
+  /// Which currency this staff member's payroll/deduction is recorded
+  /// in for this run — defaults to their reference currency, but can be
+  /// switched per line.
+  AppCurrency currency;
+
+  /// Outstanding advance balance per currency
+  /// (sum(advance) - sum(advance_deduction)), fetched once when the
+  /// screen loads.
+  Map<AppCurrency, double> owed = {for (final c in AppCurrency.values) c: 0};
   bool loadingOwed = true;
 
   /// Whether this staff member is part of the current payroll run.
@@ -26,6 +37,7 @@ class _PayrollLine {
 
   final TextEditingController repayController;
 
+  double get owedInSelectedCurrency => owed[currency] ?? 0;
   double get repayAmount => double.tryParse(repayController.text) ?? 0;
   double get netAmount => (baseSalary - repayAmount).clamp(0, double.infinity);
 
@@ -36,7 +48,8 @@ class _PayrollLine {
 /// transaction at a time. Keeps the same per-staff mechanics the old
 /// Add Transaction "payroll" type had (base salary / owed advance /
 /// repay amount / net to receive) - just applied to every included staff
-/// member at once, with one shared date for the whole run.
+/// member at once, with one shared date for the whole run. Currency is
+/// picked per staff line, not for the whole run.
 class PayrollScreen extends StatefulWidget {
   const PayrollScreen({super.key});
 
@@ -52,14 +65,19 @@ class _PayrollScreenState extends State<PayrollScreen> {
   DateTime _selectedDate = DateTime.now();
   final _dateFormat = DateFormat('MMM d, yyyy');
   final _dbDateFormat = DateFormat('yyyy-MM-dd');
-  final _currency = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
 
   bool _saving = false;
   String? _errorBanner;
 
   int get _includedCount => _lines.where((l) => l.included).length;
-  double get _totalToPay =>
-      _lines.where((l) => l.included).fold(0, (sum, l) => sum + l.netAmount);
+
+  Map<AppCurrency, double> get _totalToPay {
+    final totals = {for (final c in AppCurrency.values) c: 0.0};
+    for (final l in _lines.where((l) => l.included)) {
+      totals[l.currency] = (totals[l.currency] ?? 0) + l.netAmount;
+    }
+    return totals;
+  }
 
   @override
   void initState() {
@@ -87,6 +105,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
               staffId: s['id'] as String,
               name: s['name'] as String,
               baseSalary: (s['base_salary'] as num).toDouble(),
+              currency: AppCurrency.fromCode(s['currency'] as String?),
             ),
           )
           .toList();
@@ -113,27 +132,34 @@ class _PayrollScreenState extends State<PayrollScreen> {
     try {
       final advances = await supabase
           .from('transactions')
-          .select('amount')
+          .select('amount, currency')
           .eq('type', 'advance')
           .eq('related_staff_id', line.staffId);
       final deductions = await supabase
           .from('transactions')
-          .select('amount')
+          .select('amount, currency')
           .eq('type', 'advance_deduction')
           .eq('related_staff_id', line.staffId);
 
-      double advanceTotal = 0;
+      final given = {for (final c in AppCurrency.values) c: 0.0};
       for (final a in advances) {
-        advanceTotal += (a['amount'] as num).toDouble();
+        final currency = AppCurrency.fromCode(a['currency'] as String?);
+        given[currency] =
+            (given[currency] ?? 0) + (a['amount'] as num).toDouble();
       }
-      double deductionTotal = 0;
+      final deducted = {for (final c in AppCurrency.values) c: 0.0};
       for (final d in deductions) {
-        deductionTotal += (d['amount'] as num).toDouble();
+        final currency = AppCurrency.fromCode(d['currency'] as String?);
+        deducted[currency] =
+            (deducted[currency] ?? 0) + (d['amount'] as num).toDouble();
       }
 
       if (!mounted) return;
       setState(() {
-        line.owed = advanceTotal - deductionTotal;
+        line.owed = {
+          for (final c in AppCurrency.values)
+            c: (given[c] ?? 0) - (deducted[c] ?? 0),
+        };
         line.loadingOwed = false;
       });
     } catch (_) {
@@ -169,11 +195,12 @@ class _PayrollScreenState extends State<PayrollScreen> {
       return;
     }
     for (final line in toPay) {
-      if (line.repayAmount > line.owed + 0.01) {
+      if (line.repayAmount > line.owedInSelectedCurrency + 0.01) {
         setState(
           () => _errorBanner =
               '${line.name}: repay amount can\'t exceed the amount owed '
-              '(${_currency.format(line.owed)}).',
+              'in ${line.currency.code} '
+              '(${formatMoney(line.owedInSelectedCurrency, line.currency)}).',
         );
         return;
       }
@@ -199,6 +226,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
               'transaction_date': date,
               'related_staff_id': line.staffId,
               'note': '',
+              'currency': line.currency.code,
             })
             .select()
             .single();
@@ -218,6 +246,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
                 'transaction_date': date,
                 'related_staff_id': line.staffId,
                 'note': 'Advance deduction for payroll',
+                'currency': line.currency.code,
               })
               .select()
               .single();
@@ -240,6 +269,12 @@ class _PayrollScreenState extends State<PayrollScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final totals = _totalToPay;
+    final totalsLabel = AppCurrency.values
+        .where((c) => (totals[c] ?? 0) > 0.004)
+        .map((c) => formatMoney(totals[c] ?? 0, c))
+        .join(' + ');
+
     return Scaffold(
       appBar: AppBar(title: const Text('Run Payroll')),
       body: _loading
@@ -354,8 +389,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                     itemCount: _lines.length,
                     separatorBuilder: (_, _) => const SizedBox(height: 10),
-                    itemBuilder: (context, index) =>
-                        _staffCard(_lines[index]),
+                    itemBuilder: (context, index) => _staffCard(_lines[index]),
                   ),
                 ),
                 SafeArea(
@@ -385,7 +419,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
                                 : Text(
                                     _includedCount == 0
                                         ? 'Select staff to pay'
-                                        : 'Pay $_includedCount staff · ${_currency.format(_totalToPay)}',
+                                        : 'Pay $_includedCount staff · $totalsLabel',
                                     style: const TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w700,
@@ -429,19 +463,23 @@ class _PayrollScreenState extends State<PayrollScreen> {
                 value: included,
                 activeTrackColor: AppColors.payroll,
                 activeThumbColor: Colors.white,
-                onChanged: (value) =>
-                    setState(() => line.included = value),
+                onChanged: (value) => setState(() => line.included = value),
               ),
             ],
           ),
           if (included) ...[
+            const SizedBox(height: 12),
+            CurrencyToggle(
+              value: line.currency,
+              onChanged: (value) => setState(() => line.currency = value),
+            ),
             const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
                   child: _infoField(
                     'Base salary',
-                    _currency.format(line.baseSalary),
+                    formatMoney(line.baseSalary, line.currency),
                     AppColors.payroll,
                   ),
                 ),
@@ -449,7 +487,12 @@ class _PayrollScreenState extends State<PayrollScreen> {
                 Expanded(
                   child: _infoField(
                     'Owed (advance)',
-                    line.loadingOwed ? '…' : _currency.format(line.owed),
+                    line.loadingOwed
+                        ? '…'
+                        : formatMoney(
+                            line.owedInSelectedCurrency,
+                            line.currency,
+                          ),
                     AppColors.advance,
                   ),
                 ),
@@ -471,14 +514,11 @@ class _PayrollScreenState extends State<PayrollScreen> {
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
               decoration: InputDecoration(
                 isDense: true,
-                hintText: '\$0.00',
-                prefixText: '\$ ',
+                hintText: '${line.currency.symbol}0',
+                prefixText: '${line.currency.symbol} ',
                 filled: true,
                 fillColor: AppColors.surface,
                 contentPadding: const EdgeInsets.symmetric(
@@ -486,21 +526,15 @@ class _PayrollScreenState extends State<PayrollScreen> {
                   vertical: 12,
                 ),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(
-                    AppStyles.radiusField,
-                  ),
+                  borderRadius: BorderRadius.circular(AppStyles.radiusField),
                   borderSide: const BorderSide(color: AppColors.hairline),
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(
-                    AppStyles.radiusField,
-                  ),
+                  borderRadius: BorderRadius.circular(AppStyles.radiusField),
                   borderSide: const BorderSide(color: AppColors.hairline),
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(
-                    AppStyles.radiusField,
-                  ),
+                  borderRadius: BorderRadius.circular(AppStyles.radiusField),
                   borderSide: const BorderSide(
                     color: AppColors.brandGreenLight,
                     width: 1.6,
@@ -512,10 +546,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
             const SizedBox(height: 12),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 12,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
@@ -547,7 +578,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
                     ),
                   ),
                   Text(
-                    _currency.format(line.netAmount),
+                    formatMoney(line.netAmount, line.currency),
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../main.dart';
 import '../theme/app_theme.dart';
+import '../utils/currency.dart';
 import '../widgets/app_ui.dart';
 
 class _Entry {
@@ -9,6 +10,7 @@ class _Entry {
     required this.date,
     required this.label,
     required this.amount,
+    required this.currency,
     required this.color,
     required this.icon,
     required this.isNeutral,
@@ -17,6 +19,7 @@ class _Entry {
   final DateTime date;
   final String label;
   final double amount;
+  final AppCurrency currency;
   final Color color;
   final IconData icon;
 
@@ -28,18 +31,22 @@ class _Entry {
 
 /// One staff member's advance balance and history: every advance given
 /// (increases what they owe), every deduction taken from payroll
-/// (reduces it), and payroll paid, merged and sorted newest first.
+/// (reduces it), and payroll paid, merged and sorted newest first. A
+/// staff member can be advanced/paid in either currency, so the owed
+/// balance is tracked per currency — never blended.
 class StaffDetailScreen extends StatefulWidget {
   const StaffDetailScreen({
     super.key,
     required this.staffId,
     required this.staffName,
     required this.baseSalary,
+    required this.baseSalaryCurrency,
   });
 
   final String staffId;
   final String staffName;
   final double baseSalary;
+  final AppCurrency baseSalaryCurrency;
 
   @override
   State<StaffDetailScreen> createState() => _StaffDetailScreenState();
@@ -48,10 +55,9 @@ class StaffDetailScreen extends StatefulWidget {
 class _StaffDetailScreenState extends State<StaffDetailScreen> {
   bool _loading = true;
   String? _errorMessage;
-  double _owed = 0;
+  Map<AppCurrency, double> _owed = {};
   List<_Entry> _entries = [];
 
-  final _currency = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
   final _dateFormat = DateFormat('MMM d, yyyy');
 
   @override
@@ -69,23 +75,25 @@ class _StaffDetailScreenState extends State<StaffDetailScreen> {
           .eq('related_staff_id', widget.staffId);
       final txns = List<Map<String, dynamic>>.from(data);
 
-      double given = 0;
-      double deducted = 0;
+      final given = {for (final c in AppCurrency.values) c: 0.0};
+      final deducted = {for (final c in AppCurrency.values) c: 0.0};
       final entries = <_Entry>[];
 
       for (final t in txns) {
         final type = t['type'] as String;
         final amount = (t['amount'] as num).toDouble();
         final date = DateTime.parse(t['transaction_date'] as String);
+        final currency = AppCurrency.fromCode(t['currency'] as String?);
 
         switch (type) {
           case 'advance':
-            given += amount;
+            given[currency] = (given[currency] ?? 0) + amount;
             entries.add(
               _Entry(
                 date: date,
                 label: 'Advance given',
                 amount: amount,
+                currency: currency,
                 color: AppColors.advance,
                 icon: Icons.pan_tool_alt_outlined,
                 isNeutral: false,
@@ -93,12 +101,13 @@ class _StaffDetailScreenState extends State<StaffDetailScreen> {
             );
             break;
           case 'advance_deduction':
-            deducted += amount;
+            deducted[currency] = (deducted[currency] ?? 0) + amount;
             entries.add(
               _Entry(
                 date: date,
                 label: 'Deducted from payroll',
                 amount: amount,
+                currency: currency,
                 color: AppColors.neutral,
                 icon: Icons.sync_alt,
                 isNeutral: true,
@@ -111,6 +120,7 @@ class _StaffDetailScreenState extends State<StaffDetailScreen> {
                 date: date,
                 label: 'Payroll paid',
                 amount: amount,
+                currency: currency,
                 color: AppColors.payroll,
                 icon: Icons.payments_outlined,
                 isNeutral: false,
@@ -123,7 +133,10 @@ class _StaffDetailScreenState extends State<StaffDetailScreen> {
       entries.sort((a, b) => b.date.compareTo(a.date));
 
       setState(() {
-        _owed = given - deducted;
+        _owed = {
+          for (final c in AppCurrency.values)
+            c: (given[c] ?? 0) - (deducted[c] ?? 0),
+        };
         _entries = entries;
         _loading = false;
       });
@@ -137,7 +150,7 @@ class _StaffDetailScreenState extends State<StaffDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final hasDebt = _owed > 0.01;
+    final hasDebt = _owed.values.any((v) => v > 0.01);
 
     return Scaffold(
       appBar: AppBar(title: Text(widget.staffName)),
@@ -181,18 +194,22 @@ class _StaffDetailScreenState extends State<StaffDetailScreen> {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        Text(
-                          _currency.format(_owed.abs()),
+                        DualCurrencyStat(
+                          amounts: {
+                            for (final c in AppCurrency.values)
+                              c: (_owed[c] ?? 0).abs(),
+                          },
                           style: const TextStyle(
                             fontSize: 28,
                             fontWeight: FontWeight.w800,
                             letterSpacing: -0.6,
                             color: AppColors.ink,
                           ),
+                          spacing: 4,
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Base salary: ${_currency.format(widget.baseSalary)}',
+                          'Base salary: ${formatMoney(widget.baseSalary, widget.baseSalaryCurrency)}',
                           style: const TextStyle(
                             fontSize: 12.5,
                             color: AppColors.inkMuted,
@@ -250,8 +267,8 @@ class _StaffDetailScreenState extends State<StaffDetailScreen> {
                               ),
                               Text(
                                 e.isNeutral
-                                    ? _currency.format(e.amount)
-                                    : '-${_currency.format(e.amount)}',
+                                    ? formatMoney(e.amount, e.currency)
+                                    : '-${formatMoney(e.amount, e.currency)}',
                                 style: TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w700,

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../main.dart';
 import '../theme/app_theme.dart';
+import '../utils/currency.dart';
 import '../widgets/app_ui.dart';
 
 class PartnersScreen extends StatefulWidget {
@@ -15,13 +15,11 @@ class _PartnersScreenState extends State<PartnersScreen> {
   bool _loading = true;
   String? _errorMessage;
   List<Map<String, dynamic>> _partners = [];
-  Map<String, double> _owed = {};
+  Map<String, Map<AppCurrency, double>> _owed = {};
 
   final _nameController = TextEditingController();
   bool _adding = false;
   String? _addError;
-
-  final _currency = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
 
   @override
   void initState() {
@@ -43,25 +41,29 @@ class _PartnersScreenState extends State<PartnersScreen> {
 
       final loanData = await supabase
           .from('transactions')
-          .select('type, amount, related_partner_id')
+          .select('type, amount, related_partner_id, currency')
           .inFilter('type', ['loan', 'loan_repayment']);
       final loanTxns = List<Map<String, dynamic>>.from(loanData);
 
-      final owed = <String, double>{};
+      final owed = <String, Map<AppCurrency, double>>{};
       for (final partner in partners) {
         final id = partner['id'] as String;
-        double lent = 0;
-        double repaid = 0;
+        final lent = {for (final c in AppCurrency.values) c: 0.0};
+        final repaid = {for (final c in AppCurrency.values) c: 0.0};
         for (final t in loanTxns) {
           if (t['related_partner_id'] != id) continue;
+          final currency = AppCurrency.fromCode(t['currency'] as String?);
           final amount = (t['amount'] as num).toDouble();
           if (t['type'] == 'loan') {
-            lent += amount;
+            lent[currency] = (lent[currency] ?? 0) + amount;
           } else {
-            repaid += amount;
+            repaid[currency] = (repaid[currency] ?? 0) + amount;
           }
         }
-        owed[id] = lent - repaid;
+        owed[id] = {
+          for (final c in AppCurrency.values)
+            c: (lent[c] ?? 0) - (repaid[c] ?? 0),
+        };
       }
 
       setState(() {
@@ -192,8 +194,8 @@ class _PartnersScreenState extends State<PartnersScreen> {
                       itemBuilder: (context, index) {
                         final partner = _partners[index];
                         final name = partner['name'] as String;
-                        final owed = _owed[partner['id']] ?? 0;
-                        final hasDebt = owed > 0.01;
+                        final owed = _owed[partner['id']] ?? {};
+                        final hasDebt = owed.values.any((v) => v > 0.01);
                         return AppCard(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 14,
@@ -226,8 +228,12 @@ class _PartnersScreenState extends State<PartnersScreen> {
                                     ),
                                   ),
                                   const SizedBox(height: 2),
-                                  Text(
-                                    _currency.format(owed.abs()),
+                                  DualCurrencyStat(
+                                    amounts: {
+                                      for (final c in AppCurrency.values)
+                                        c: (owed[c] ?? 0).abs(),
+                                    },
+                                    crossAxisAlignment: CrossAxisAlignment.end,
                                     style: TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w700,
