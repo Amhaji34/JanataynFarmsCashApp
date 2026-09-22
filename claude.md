@@ -1,8 +1,9 @@
 # Farm Cash Manager — Project Reference
 
 A Flutter + Supabase app for tracking farm business cash flow: bills, payroll,
-loans to partners, and staff advances. Built by one admin (the person who
-controls all cash) with two partners who have read-only visibility.
+loans to partners, staff advances, and harvest sales to customers. Built by
+one admin (the person who controls all cash) with two partners who have
+read-only visibility.
 
 ## Stack
 
@@ -81,6 +82,56 @@ id           uuid (PK)
 name         text
 base_salary  numeric
 created_at   timestamptz
+```
+
+### `customers`
+People/businesses who buy harvest produce. Simple name lookup, same
+philosophy as `partners`/`staff` — no financial fields here; what a
+customer owes is calculated from `harvests` and `customer_payments`.
+```
+id          uuid (PK)
+name        text
+phone       text (nullable)
+note        text (nullable)
+created_at  timestamptz
+```
+
+### `harvests`
+One row per harvest, which doubles as its sale record — see "Harvests
+and customer sales" below.
+```
+id                uuid (PK)
+harvest_date      date
+kg_harvested      numeric (> 0)
+price_per_kg      numeric (>= 0)
+customer_id       uuid (FK -> customers.id) — not nullable; a harvest is
+                  logged already knowing who it was sold to
+note              text (nullable)
+created_by        uuid (FK -> auth.users.id)
+created_at        timestamptz
+```
+Total sale value (`kg_harvested * price_per_kg`) is **calculated, never
+stored** — same philosophy as everywhere else in this app.
+
+### `customer_payments`
+Every payment a customer makes — the upfront amount recorded at harvest
+time *and* any later payment — lands here as one ledger.
+```
+id             uuid (PK)
+customer_id    uuid (FK -> customers.id)
+harvest_id     uuid (nullable, FK -> harvests.id) — context only; a
+               payment always reduces the customer's overall balance,
+               never one specific harvest's balance
+amount         numeric (> 0)
+payment_date   date
+note           text (nullable)
+created_by     uuid (FK -> auth.users.id)
+created_at     timestamptz
+```
+A customer's outstanding balance is always calculated:
+```
+outstanding = sum(harvests.kg_harvested * harvests.price_per_kg for that customer)
+            - sum(customer_payments.amount for that customer)
 ```
 
 ### `transactions`
@@ -222,12 +273,13 @@ balance and their base salary before saving.
 Four fixed accounts (`accounts` table) sit above the transaction ledger:
 **Investment**, **Loans**, **Revenue**, and **Petty Cash**. The first
 three are "fundable" — money is added to them directly (a capital
-investment, loan proceeds received, revenue collected). None of them can
-be spent from directly, and Petty Cash cannot be funded any other way:
-the **only** path into Petty Cash is a transfer from one of the other
-three. This is enforced by the UI (Add Funds only offers the fundable
-three; Transfer only offers them as a source and always targets Petty
-Cash), not by a DB constraint.
+investment, loan proceeds received, revenue collected **including harvest
+sale payments — see "Harvests and customer sales" below**). None of them
+can be spent from directly, and Petty Cash cannot be funded any other
+way: the **only** path into Petty Cash is a transfer from one of the
+other three. This is enforced by the UI (Add Funds only offers the
+fundable three; Transfer only offers them as a source and always targets
+Petty Cash), not by a DB constraint.
 
 Every account's balance is **calculated**, never stored, same philosophy
 as everywhere else in this app:
@@ -261,6 +313,42 @@ tables and summing (fine at current scale — a 3-person farm business). If
 volume grows significantly, move this aggregation into a Postgres view or
 RPC function so the database does the math instead of the client.
 
+## Harvests and customer sales
+
+A `harvests` row doubles as its own sale record: logging a harvest means
+recording how many kg were picked, the price per kg, and which customer
+it was sold to, all at once — there's no separate "sale" step. Total sale
+value (`kg_harvested * price_per_kg`) is **calculated, never stored**,
+same philosophy as everywhere else.
+
+The customer can pay some, all, or none of that value up front (the
+upfront field defaults to `0.00` and is capped at the total value). Any
+unpaid remainder simply adds to the customer's running balance, to be
+collected later via the Customers > customer detail > "Record payment"
+screen. Both paths — the upfront payment at harvest time and a later
+standalone payment — go through the same shared function,
+`recordCustomerPayment()` (`lib/services/customer_payments.dart`), which
+does two things atomically from the app's point of view: inserts the
+`customer_payments` row, then inserts a `fund_add` into the **Revenue**
+funding account for that same amount. This is the mechanism by which
+harvest sale proceeds flow into the funding-accounts system described
+above — a customer payment always credits Revenue, exactly like an
+admin manually adding funds would.
+
+A customer's outstanding balance is always **calculated**, never stored:
+```
+outstanding = sum(harvests.kg_harvested * harvests.price_per_kg for that customer)
+            - sum(customer_payments.amount for that customer)
+```
+`customer_payments.harvest_id` is nullable and purely contextual (which
+harvest a payment was originally tied to, if any) — a payment always
+reduces the customer's overall balance, never one specific harvest's
+balance, since there's no per-harvest balance concept.
+
+There is no edit UI for harvests or customer payments yet — only
+add/record and view. If a correction is needed, it's a manual SQL fix for
+now, same stance as other not-yet-built edit paths in this app.
+
 ## Multiple invoices (multi-category expense entries)
 
 Some payments cover several invoices at once (e.g. "$10 sent, but it's $4
@@ -293,7 +381,8 @@ updating in place — this avoids having to diff/reconcile individual
 
 Every table has RLS enabled. The pattern across `partners`, `staff`,
 `transactions`, `transaction_items`, `expense_categories`, `settings`,
-`accounts`, and `account_transactions` is:
+`accounts`, `account_transactions`, `customers`, `harvests`, and
+`customer_payments` is:
 
 - **Read:** any authenticated user (admin or viewer) — `using (true)`.
 - **Write (insert/update/delete):** only rows where the requesting user's
@@ -342,7 +431,20 @@ lib/
 │                                     them too); shows "Run Payroll" plus a
 │                                     "MANAGE" section (Expense categories,
 │                                     Staff, Partners, Settings) for
-│                                     admins only.
+│                                     admins only. Also always shows
+│                                     Harvests + Customers (read-only for
+│                                     viewers, same as Transactions/Reports).
+├── services/
+│   └── customer_payments.dart     — `recordCustomerPayment()`, the shared
+│                                     function used by both
+│                                     add_harvest_screen.dart (upfront
+│                                     payment) and record_payment_screen.dart
+│                                     (standalone payment): inserts the
+│                                     `customer_payments` row, then a
+│                                     `fund_add` into the Revenue account
+│                                     for the same amount. Extracted here
+│                                     specifically to avoid duplicating
+│                                     that two-step logic in both screens.
 ├── screens/
 │   ├── auth_gate.dart             — the actual `home` widget. Renders
 │   │                                 DashboardScreen if a session is
@@ -424,26 +526,60 @@ lib/
 │   │                                 tapping edit opens a bottom sheet for
 │   │                                 single-invoice, full screen for
 │   │                                 multi-invoice).
-│   └── report_screen.dart         — per-account reporting, reached from
-│                                     the drawer. A "Payroll / Advances /
-│                                     Loans / Expenses" chip selector
-│                                     switches which transaction type(s)
-│                                     are shown, with a contextual filter
-│                                     (staff for Payroll/Advances, partner
-│                                     for Loans, category for Expenses)
-│                                     plus a shared date-range filter and
-│                                     summary total cards. Payroll/
-│                                     Advances/Loans show a filtered
-│                                     transaction list; Expenses instead
-│                                     shows two bar charts (spend by
-│                                     category, capped to top 7 + "Other";
-│                                     spend by month, last 6 months) built
-│                                     with `fl_chart`, single-hue (the
-│                                     app's expense red) since it's a
-│                                     magnitude comparison, not identity -
-│                                     see the dataviz skill's form-choice
-│                                     guidance before changing this.
-│                                     Read-only, so visible to viewers too.
+│   ├── report_screen.dart         — per-account reporting, reached from
+│   │                                 the drawer. A "Payroll / Advances /
+│   │                                 Loans / Expenses" chip selector
+│   │                                 switches which transaction type(s)
+│   │                                 are shown, with a contextual filter
+│   │                                 (staff for Payroll/Advances, partner
+│   │                                 for Loans, category for Expenses)
+│   │                                 plus a shared date-range filter and
+│   │                                 summary total cards. Payroll/
+│   │                                 Advances/Loans show a filtered
+│   │                                 transaction list; Expenses instead
+│   │                                 shows two bar charts (spend by
+│   │                                 category, capped to top 7 + "Other";
+│   │                                 spend by month, last 6 months) built
+│   │                                 with `fl_chart`, single-hue (the
+│   │                                 app's expense red) since it's a
+│   │                                 magnitude comparison, not identity -
+│   │                                 see the dataviz skill's form-choice
+│   │                                 guidance before changing this.
+│   │                                 Read-only, so visible to viewers too.
+│   ├── harvests_screen.dart       — every harvest logged, newest first,
+│   │                                 with summary stats (count, total kg,
+│   │                                 total value, total outstanding). FAB
+│   │                                 to add a harvest, admin only.
+│   │                                 Read-only list visible to viewers.
+│   ├── add_harvest_screen.dart    — logs a harvest and its sale in one
+│   │                                 form: date, kg, price/kg (computed
+│   │                                 total value shown live), customer
+│   │                                 dropdown (with a "+ Add customer"
+│   │                                 shortcut into customers_screen.dart),
+│   │                                 and an optional upfront payment
+│   │                                 (defaults to 0, capped at total
+│   │                                 value). If upfront > 0, calls
+│   │                                 `recordCustomerPayment()` after
+│   │                                 inserting the harvest. Admin only.
+│   ├── customers_screen.dart      — list of customers with each one's
+│   │                                 current owed/settled balance
+│   │                                 (calculated from harvests +
+│   │                                 customer_payments), plus an add-new
+│   │                                 form (name, phone, note). Tapping a
+│   │                                 customer opens
+│   │                                 customer_detail_screen.dart.
+│   ├── customer_detail_screen.dart — one customer's balance plus a merged,
+│   │                                 date-sorted history of their
+│   │                                 harvest sales and payments. "Record
+│   │                                 payment" button (admin only) opens
+│   │                                 record_payment_screen.dart.
+│   └── record_payment_screen.dart — standalone form (date, amount, note)
+│                                     for a customer paying down their
+│                                     balance outside of a harvest;
+│                                     validates against their current
+│                                     outstanding balance and calls the
+│                                     same `recordCustomerPayment()`
+│                                     shared function. Admin only.
 ```
 
 Dashboard and transaction log both independently fetch and sum
@@ -506,9 +642,11 @@ a raw hex is drifting from the system.
 1. Any new writable table needs the same RLS pattern: read = all
    authenticated users, write = admin role only.
 2. New transaction-adjacent features should go through `transactions` +
-   `transaction_items` (expense/payroll/partner-loan events) or
-   `accounts` + `account_transactions` (funding/capital events), not new
-   bespoke tables, unless the data genuinely isn't a cash event.
+   `transaction_items` (expense/payroll/partner-loan events),
+   `accounts` + `account_transactions` (funding/capital events), or
+   `customers` + `harvests` + `customer_payments` (harvest sales and what
+   customers owe), not new bespoke tables, unless the data genuinely
+   isn't a cash event.
 3. Partners are still just a simple name lookup — no per-partner
    equity/profit-share fields. Capital *is* tracked now (see "Funding
    accounts"), but it's tracked at the business level via `accounts`, not

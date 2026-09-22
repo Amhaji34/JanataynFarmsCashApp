@@ -1,0 +1,309 @@
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import '../main.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_ui.dart';
+import 'record_payment_screen.dart';
+
+class _Entry {
+  _Entry({
+    required this.date,
+    required this.label,
+    required this.subtitle,
+    required this.amount,
+    required this.isPositive,
+    required this.color,
+    required this.icon,
+  });
+
+  final DateTime date;
+  final String label;
+  final String subtitle;
+  final double amount;
+  final bool isPositive;
+  final Color color;
+  final IconData icon;
+}
+
+/// One customer's balance and full history: every harvest sold to them
+/// (increases what they owe) and every payment they've made (reduces
+/// it), merged and sorted newest first.
+class CustomerDetailScreen extends StatefulWidget {
+  const CustomerDetailScreen({
+    super.key,
+    required this.customerId,
+    required this.customerName,
+    this.customerPhone,
+  });
+
+  final String customerId;
+  final String customerName;
+  final String? customerPhone;
+
+  @override
+  State<CustomerDetailScreen> createState() => _CustomerDetailScreenState();
+}
+
+class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
+  bool _loading = true;
+  String? _errorMessage;
+  double _owed = 0;
+  List<_Entry> _entries = [];
+  String? _role;
+
+  final _currency = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
+  final _dateFormat = DateFormat('MMM d, yyyy');
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRole();
+    _load();
+  }
+
+  Future<void> _loadRole() async {
+    final userId = supabase.auth.currentUser!.id;
+    final profile = await supabase
+        .from('users')
+        .select()
+        .eq('id', userId)
+        .single();
+    if (mounted) setState(() => _role = profile['role'] as String?);
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final harvestsData = await supabase
+          .from('harvests')
+          .select()
+          .eq('customer_id', widget.customerId);
+      final harvests = List<Map<String, dynamic>>.from(harvestsData);
+
+      final paymentsData = await supabase
+          .from('customer_payments')
+          .select()
+          .eq('customer_id', widget.customerId);
+      final payments = List<Map<String, dynamic>>.from(paymentsData);
+
+      double sold = 0;
+      double paid = 0;
+      final entries = <_Entry>[];
+
+      for (final h in harvests) {
+        final kg = (h['kg_harvested'] as num).toDouble();
+        final pricePerKg = (h['price_per_kg'] as num).toDouble();
+        final total = kg * pricePerKg;
+        sold += total;
+        entries.add(
+          _Entry(
+            date: DateTime.parse(h['harvest_date'] as String),
+            label: 'Harvest sale',
+            subtitle: '${kg.toStringAsFixed(1)} kg @ ${_currency.format(pricePerKg)}/kg',
+            amount: total,
+            isPositive: false,
+            color: AppColors.brandGreenLight,
+            icon: Icons.eco_outlined,
+          ),
+        );
+      }
+
+      for (final p in payments) {
+        final amount = (p['amount'] as num).toDouble();
+        paid += amount;
+        entries.add(
+          _Entry(
+            date: DateTime.parse(p['payment_date'] as String),
+            label: 'Payment received',
+            subtitle: (p['note'] as String? ?? '').trim().isNotEmpty
+                ? (p['note'] as String).trim()
+                : 'Paid toward balance',
+            amount: amount,
+            isPositive: true,
+            color: AppColors.cashIn,
+            icon: Icons.check_circle_outline,
+          ),
+        );
+      }
+
+      entries.sort((a, b) => b.date.compareTo(a.date));
+
+      setState(() {
+        _owed = sold - paid;
+        _entries = entries;
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Could not load customer history: $e';
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _openRecordPayment() async {
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => RecordPaymentScreen(
+          customerId: widget.customerId,
+          customerName: widget.customerName,
+          outstanding: _owed,
+        ),
+      ),
+    );
+    if (result == true) _load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasDebt = _owed > 0.01;
+
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.customerName)),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _errorMessage != null
+          ? Padding(
+              padding: const EdgeInsets.all(20),
+              child: Center(child: ErrorNote(_errorMessage!)),
+            )
+          : RefreshIndicator(
+              onRefresh: _load,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                children: [
+                  AppCard(
+                    accent: hasDebt ? AppColors.expense : AppColors.cashIn,
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            IconBadge(
+                              icon: Icons.account_balance_wallet_outlined,
+                              color: hasDebt
+                                  ? AppColors.expense
+                                  : AppColors.cashIn,
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              hasDebt ? 'Owes' : 'Balance settled',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.inkSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          _currency.format(_owed.abs()),
+                          style: const TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.6,
+                            color: AppColors.ink,
+                          ),
+                        ),
+                        if (widget.customerPhone != null &&
+                            widget.customerPhone!.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            widget.customerPhone!,
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              color: AppColors.inkMuted,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (_role == 'admin') ...[
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        onPressed: _openRecordPayment,
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('Record payment'),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                  const SectionLabel('HISTORY'),
+                  const SizedBox(height: 10),
+                  if (_entries.isEmpty)
+                    const EmptyState(
+                      icon: Icons.receipt_long_outlined,
+                      title: 'No activity yet',
+                      subtitle: 'Harvest sales and payments will show up here.',
+                    )
+                  else
+                    ..._entries.map(
+                      (e) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: AppCard(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          child: Row(
+                            children: [
+                              IconBadge(icon: e.icon, color: e.color),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      e.label,
+                                      style: const TextStyle(
+                                        fontSize: 14.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.ink,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      e.subtitle,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: AppColors.inkMuted,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      _dateFormat.format(e.date),
+                                      style: const TextStyle(
+                                        fontSize: 11.5,
+                                        color: AppColors.inkMuted,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Text(
+                                '${e.isPositive ? '+' : '-'}${_currency.format(e.amount)}',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.2,
+                                  color: e.color,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+    );
+  }
+}

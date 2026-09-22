@@ -4,6 +4,8 @@ import '../screens/login_screen.dart';
 import '../screens/transaction_log_screen.dart';
 import '../screens/report_screen.dart';
 import '../screens/payroll_screen.dart';
+import '../screens/harvests_screen.dart';
+import '../screens/customers_screen.dart';
 import '../screens/expense_categories_screen.dart';
 import '../screens/staff_screen.dart';
 import '../screens/partners_screen.dart';
@@ -138,6 +140,20 @@ class AppDrawer extends StatelessWidget {
                   label: 'Reports',
                   color: AppColors.loan,
                   destination: const ReportScreen(),
+                ),
+                _navTile(
+                  context: context,
+                  icon: Icons.eco_outlined,
+                  label: 'Harvests',
+                  color: AppColors.brandGreenLight,
+                  destination: const HarvestsScreen(),
+                ),
+                _navTile(
+                  context: context,
+                  icon: Icons.groups_outlined,
+                  label: 'Customers',
+                  color: AppColors.brandNavy,
+                  destination: const CustomersScreen(),
                 ),
                 if (isAdmin) ...[
                   _navTile(
