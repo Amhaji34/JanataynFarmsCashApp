@@ -100,34 +100,56 @@ created_at  timestamptz
 ```
 
 ### `harvests`
-One row per harvest, which doubles as its sale record — see "Harvests
-and customer sales" below.
+Pure inventory intake — how much was picked and when. Deliberately
+carries no customer, price, or currency: the produce may sit unsold for
+a few days, and can end up sold to more than one customer over time. See
+"Harvests and customer sales" below.
 ```
 id                uuid (PK)
 harvest_date      date
 kg_harvested      numeric (> 0)
-price_per_kg      numeric (>= 0)
-customer_id       uuid (FK -> customers.id) — not nullable; a harvest is
-                  logged already knowing who it was sold to
-currency          text, 'USD' | 'SLSH' (default 'USD') — the currency
-                  price_per_kg is quoted in; forced onto any upfront
-                  payment for this harvest too (see "Currencies" below)
 note              text (nullable)
 created_by        uuid (FK -> auth.users.id)
 created_at        timestamptz
 ```
-Total sale value (`kg_harvested * price_per_kg`) is **calculated, never
-stored** — same philosophy as everywhere else in this app.
+A harvest's remaining (unsold) kg is **calculated, never stored**:
+`kg_harvested - sum(harvest_sales.kg_sold for that harvest)`.
+
+### `harvest_sales`
+One row per sale against a harvest's stock — a harvest can have many of
+these, to the same or different customers, on different dates and at
+different prices.
+```
+id             uuid (PK)
+harvest_id     uuid (FK -> harvests.id) — not nullable; which harvest
+               batch this sale draws down
+customer_id    uuid (FK -> customers.id) — not nullable
+kg_sold        numeric (> 0)
+price_per_kg   numeric (>= 0)
+currency       text, 'USD' | 'SLSH' (default 'USD') — see "Currencies"
+sale_date      date — independent of the harvest's own date; this is
+               what lets a sale happen a few days after harvesting
+note           text (nullable)
+created_by     uuid (FK -> auth.users.id)
+created_at     timestamptz
+```
+Total sale value (`kg_sold * price_per_kg`) is **calculated, never
+stored** — same philosophy as everywhere else in this app. A sale can't
+exceed the harvest's remaining stock; that's validated client-side in
+`add_sale_screen.dart` (fetch existing sales for the chosen harvest, sum
+their `kg_sold`), the same pattern as the multi-invoice "allocated must
+equal total" and Transfer/Exchange "can't exceed available balance"
+checks — not a DB constraint.
 
 ### `customer_payments`
-Every payment a customer makes — the upfront amount recorded at harvest
+Every payment a customer makes — the upfront amount recorded at sale
 time *and* any later payment — lands here as one ledger.
 ```
 id             uuid (PK)
 customer_id    uuid (FK -> customers.id)
-harvest_id     uuid (nullable, FK -> harvests.id) — context only; a
+sale_id        uuid (nullable, FK -> harvest_sales.id) — context only; a
                payment always reduces the customer's overall balance,
-               never one specific harvest's balance
+               never one specific sale's balance
 amount         numeric (> 0)
 currency       text, 'USD' | 'SLSH' (default 'USD')
 payment_date   date
@@ -136,11 +158,11 @@ created_by     uuid (FK -> auth.users.id)
 created_at     timestamptz
 ```
 A customer's outstanding balance is always calculated, **per currency**
-(a customer with harvests in both currencies has two separate
-outstanding figures, never blended):
+(a customer with sales in both currencies has two separate outstanding
+figures, never blended):
 ```
-outstanding[currency] = sum(harvests.kg_harvested * harvests.price_per_kg
-                             for that customer, where harvests.currency = currency)
+outstanding[currency] = sum(harvest_sales.kg_sold * harvest_sales.price_per_kg
+                             for that customer, where harvest_sales.currency = currency)
                        - sum(customer_payments.amount for that customer,
                              where customer_payments.currency = currency)
 ```
@@ -395,17 +417,19 @@ below), never summed together into one blended figure.
   currencies at once).
 - **Entry forms** each get a `CurrencyToggle` next to their amount
   field: add_transaction_screen.dart, add_funds_screen.dart,
-  transfer_funds_screen.dart, add_harvest_screen.dart,
-  record_payment_screen.dart, staff_screen.dart's add-form, and
-  transaction_log_screen.dart's single-invoice quick-edit sheet. A
-  harvest's currency is forced onto its upfront payment too (a sale and
-  its upfront payment can't be in different currencies without a
-  conversion). `payroll_screen.dart` is the one exception to "one
-  toggle per form": since different staff can be paid in different
-  currencies within the same batch run, the toggle is **per staff
-  line** (defaulting to that staff member's `staff.currency`), and the
-  "Pay N staff" button shows one total per currency actually being
-  paid.
+  transfer_funds_screen.dart, exchange_screen.dart,
+  add_sale_screen.dart, record_payment_screen.dart, staff_screen.dart's
+  add-form, and transaction_log_screen.dart's single-invoice quick-edit
+  sheet. A sale's currency is forced onto its upfront payment too (a
+  sale and its upfront payment can't be in different currencies without
+  a conversion). `add_harvest_screen.dart` has no currency toggle at all
+  — a harvest is pure inventory, no price attached until it's sold (see
+  "Harvests and customer sales" below). `payroll_screen.dart` is the one
+  exception to "one toggle per form": since different staff can be paid
+  in different currencies within the same batch run, the toggle is
+  **per staff line** (defaulting to that staff member's
+  `staff.currency`), and the "Pay N staff" button shows one total per
+  currency actually being paid.
 - **Display screens** show both currencies at once via
   `DualCurrencyStat` wherever there's a per-entity balance (the
   dashboard's cash-on-hand hero and stat tiles, the Accounts grid,
@@ -455,41 +479,42 @@ account's own History screen.
 
 ## Harvests and customer sales
 
-A `harvests` row doubles as its own sale record: logging a harvest means
-recording how many kg were picked, the price per kg, and which customer
-it was sold to, all at once — there's no separate "sale" step. Total sale
-value (`kg_harvested * price_per_kg`) is **calculated, never stored**,
-same philosophy as everywhere else.
+Harvesting and selling are two separate steps, on purpose: a harvest is
+logged as pure inventory (kg + date, `add_harvest_screen.dart`), and can
+sit unsold for a few days before anything is sold from it. Selling —
+`add_sale_screen.dart` — records one `harvest_sales` row against a
+chosen harvest's remaining stock: kg sold, price/kg, currency, customer,
+sale date. A single harvest can have many of these, to different
+customers, at different prices, on different dates —
+`harvest_detail_screen.dart` (reached by tapping a harvest on
+`harvests_screen.dart`) is where that shows up: kg harvested / sold /
+remaining, and the list of individual sales. A harvest with 0 remaining
+kg shows "Fully sold" and its "Add sale" button disappears. Total sale
+value (`kg_sold * price_per_kg`) is **calculated, never stored**, same
+philosophy as everywhere else.
 
-The customer can pay some, all, or none of that value up front (the
-upfront field defaults to `0.00` and is capped at the total value). Any
-unpaid remainder simply adds to the customer's running balance, to be
-collected later via the Customers > customer detail > "Record payment"
-screen. Both paths — the upfront payment at harvest time and a later
-standalone payment — go through the same shared function,
-`recordCustomerPayment()` (`lib/services/customer_payments.dart`), which
-does two things atomically from the app's point of view: inserts the
-`customer_payments` row, then inserts a `fund_add` into the **Revenue**
-funding account for that same amount **and currency**. This is the
-mechanism by which harvest sale proceeds flow into the funding-accounts
-system described above — a customer payment always credits Revenue in
-its own currency, exactly like an admin manually adding funds would.
+The customer can pay some, all, or none of a sale's value up front (the
+upfront field on `add_sale_screen.dart` defaults to `0.00` and is capped
+at that sale's total value). Any unpaid remainder simply adds to the
+customer's running balance, to be collected later via the Customers >
+customer detail > "Record payment" screen. Both paths — the upfront
+payment at sale time and a later standalone payment — go through the
+same shared function, `recordCustomerPayment()`
+(`lib/services/customer_payments.dart`), which does two things
+atomically from the app's point of view: inserts the `customer_payments`
+row (`sale_id` set for an upfront payment, null for a standalone one),
+then inserts a `fund_add` into the **Revenue** funding account for that
+same amount **and currency**. This is the mechanism by which harvest
+sale proceeds flow into the funding-accounts system described above — a
+customer payment always credits Revenue in its own currency, exactly
+like an admin manually adding funds would.
 
 A customer's outstanding balance is always **calculated**, never
 stored, and computed **per currency** (see "Currencies" above) since a
-customer can owe in either or both:
-```
-outstanding[currency] = sum(harvests.kg_harvested * harvests.price_per_kg for that customer,
-                             where harvests.currency = currency)
-                       - sum(customer_payments.amount for that customer,
-                             where customer_payments.currency = currency)
-```
-`customer_payments.harvest_id` is nullable and purely contextual (which
-harvest a payment was originally tied to, if any) — a payment always
-reduces the customer's overall balance, never one specific harvest's
-balance, since there's no per-harvest balance concept.
+customer can owe in either or both — see the `customer_payments` table
+doc above for the exact formula.
 
-There is no edit UI for harvests or customer payments yet — only
+There is no edit UI for harvests, sales, or customer payments yet — only
 add/record and view. If a correction is needed, it's a manual SQL fix for
 now, same stance as other not-yet-built edit paths in this app.
 
@@ -530,8 +555,8 @@ updating in place — this avoids having to diff/reconcile individual
 
 Every table has RLS enabled. The pattern across `partners`, `staff`,
 `transactions`, `transaction_items`, `expense_categories`, `settings`,
-`accounts`, `account_transactions`, `customers`, `harvests`, and
-`customer_payments` is:
+`accounts`, `account_transactions`, `customers`, `harvests`,
+`harvest_sales`, and `customer_payments` is:
 
 - **Read:** any authenticated user (admin or viewer) — `using (true)`.
 - **Write (insert/update/delete):** only rows where the requesting user's
@@ -611,14 +636,15 @@ lib/
 ├── services/
 │   └── customer_payments.dart     — `recordCustomerPayment()`, the shared
 │                                     function used by both
-│                                     add_harvest_screen.dart (upfront
+│                                     add_sale_screen.dart (upfront
 │                                     payment) and record_payment_screen.dart
 │                                     (standalone payment): inserts the
-│                                     `customer_payments` row, then a
-│                                     `fund_add` into the Revenue account
-│                                     for the same amount. Extracted here
-│                                     specifically to avoid duplicating
-│                                     that two-step logic in both screens.
+│                                     `customer_payments` row (`sale_id`
+│                                     set or null), then a `fund_add` into
+│                                     the Revenue account for the same
+│                                     amount. Extracted here specifically
+│                                     to avoid duplicating that two-step
+│                                     logic in both screens.
 ├── screens/
 │   ├── auth_gate.dart             — the actual `home` widget. Renders
 │   │                                 DashboardScreen if a session is
@@ -629,9 +655,9 @@ lib/
 │   │                                 @janatayn.local internally)
 │   ├── dashboard_screen.dart      — main screen after login. Fetches
 │   │                                 profile (name/role) + all
-│   │                                 transactions, harvests, customer
-│   │                                 payments, and Revenue account
-│   │                                 fund_add rows; computes cash on
+│   │                                 transactions, harvest_sales,
+│   │                                 customer payments, and Revenue
+│   │                                 account fund_add rows; computes cash on
 │   │                                 hand, outstanding loans/advances,
 │   │                                 owed-by-customers, and this-month
 │   │                                 totals (including revenue collected
@@ -670,8 +696,12 @@ lib/
 │   │                                 current calendar month via the
 │   │                                 top-level `_thisMonthRange()`
 │   │                                 helper); the Revenue row → Revenue's
-│   │                                 AccountHistoryScreen; the Harvest
-│   │                                 row → HarvestsScreen. FAB to add a
+│   │                                 AccountHistoryScreen; the "Harvest
+│   │                                 sales" row (sums `harvest_sales`
+│   │                                 where `sale_date` is this month,
+│   │                                 not `harvests` - harvesting alone
+│   │                                 has no price) → HarvestsScreen. FAB
+│   │                                 to add a
 │   │                                 transaction (admin only); drawer for
 │   │                                 navigation to everything else.
 │   ├── add_transaction_screen.dart — type selector (expense/loan/advance
@@ -839,22 +869,54 @@ lib/
 │   │                                 Read-only, so visible to viewers too.
 │   ├── harvests_screen.dart       — every harvest logged, newest first,
 │   │                                 with summary stats (count, total kg,
-│   │                                 total value, total outstanding). FAB
-│   │                                 to add a harvest, admin only.
+│   │                                 total sold value, total
+│   │                                 outstanding — the value/outstanding
+│   │                                 stats sum `harvest_sales`, not
+│   │                                 `harvests`, since a harvest alone
+│   │                                 has no price). Each row shows kg
+│   │                                 harvested/sold and either "Fully
+│   │                                 sold" or "`X` kg left"; tapping one
+│   │                                 opens harvest_detail_screen.dart.
+│   │                                 FAB to add a harvest, admin only.
 │   │                                 Read-only list visible to viewers.
-│   ├── add_harvest_screen.dart    — logs a harvest and its sale in one
-│   │                                 form: date, kg, price/kg (computed
-│   │                                 total value shown live), customer
-│   │                                 dropdown (with a "+ Add customer"
-│   │                                 shortcut into customers_screen.dart),
-│   │                                 and an optional upfront payment
-│   │                                 (defaults to 0, capped at total
-│   │                                 value). If upfront > 0, calls
+│   ├── add_harvest_screen.dart    — logs a harvest as pure inventory
+│   │                                 intake: date, kg, note. No
+│   │                                 customer/price/currency — see
+│   │                                 "Harvests and customer sales" above.
+│   │                                 Admin only.
+│   ├── harvest_detail_screen.dart — one harvest's kg harvested/sold/
+│   │                                 remaining plus the list of
+│   │                                 individual sales against it (a
+│   │                                 harvest can be sold to more than
+│   │                                 one customer). "Add sale" button
+│   │                                 (admin only) opens
+│   │                                 add_sale_screen.dart pre-selecting
+│   │                                 this harvest; replaced by a "Fully
+│   │                                 sold" indicator once remaining kg
+│   │                                 is ~0.
+│   ├── add_sale_screen.dart       — records one sale against a chosen
+│   │                                 harvest's remaining stock: harvest
+│   │                                 picker (only harvests with
+│   │                                 remaining kg > 0, pre-selected when
+│   │                                 opened from harvest_detail_screen.
+│   │                                 dart), customer dropdown (with a
+│   │                                 "+ Add customer" shortcut into
+│   │                                 customers_screen.dart), kg to sell
+│   │                                 (validated against that harvest's
+│   │                                 remaining stock), currency, price/kg
+│   │                                 (computed total value shown live),
+│   │                                 sale date (independent of the
+│   │                                 harvest's own date — this is what
+│   │                                 lets a sale happen a few days
+│   │                                 later), and an optional upfront
+│   │                                 payment (defaults to 0, capped at
+│   │                                 total value). If upfront > 0, calls
 │   │                                 `recordCustomerPayment()` after
-│   │                                 inserting the harvest. Admin only.
+│   │                                 inserting the `harvest_sales` row.
+│   │                                 Admin only.
 │   ├── customers_screen.dart      — list of customers with each one's
 │   │                                 current owed/settled balance
-│   │                                 (calculated from harvests +
+│   │                                 (calculated from harvest_sales +
 │   │                                 customer_payments), plus an add-new
 │   │                                 form (name, phone, note). Tapping a
 │   │                                 customer opens
@@ -866,7 +928,7 @@ lib/
 │   │                                 record_payment_screen.dart.
 │   └── record_payment_screen.dart — standalone form (date, amount, note)
 │                                     for a customer paying down their
-│                                     balance outside of a harvest;
+│                                     balance outside of a sale;
 │                                     validates against their current
 │                                     outstanding balance and calls the
 │                                     same `recordCustomerPayment()`

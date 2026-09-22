@@ -4,7 +4,7 @@ import '../utils/currency.dart';
 
 final _dbDateFormat = DateFormat('yyyy-MM-dd');
 
-/// Records a customer payment (upfront-at-harvest or a later standalone
+/// Records a customer payment (upfront-at-sale or a later standalone
 /// payment) and feeds the same amount, in the same currency, into the
 /// Revenue funding account as a `fund_add` — this is the one place
 /// harvest sales connect to the `accounts` ledger. From Revenue, funds
@@ -13,7 +13,7 @@ final _dbDateFormat = DateFormat('yyyy-MM-dd');
 /// always credits Revenue in its own currency.
 Future<void> recordCustomerPayment({
   required String customerId,
-  String? harvestId,
+  String? saleId,
   required double amount,
   required DateTime date,
   required AppCurrency currency,
@@ -24,7 +24,7 @@ Future<void> recordCustomerPayment({
 
   await supabase.from('customer_payments').insert({
     'customer_id': customerId,
-    'harvest_id': harvestId,
+    'sale_id': saleId,
     'amount': amount,
     'payment_date': dateStr,
     'note': trimmedNote.isEmpty ? null : trimmedNote,

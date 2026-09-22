@@ -78,11 +78,11 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final harvestsData = await supabase
-          .from('harvests')
+      final salesData = await supabase
+          .from('harvest_sales')
           .select()
           .eq('customer_id', widget.customerId);
-      final harvests = List<Map<String, dynamic>>.from(harvestsData);
+      final sales = List<Map<String, dynamic>>.from(salesData);
 
       final paymentsData = await supabase
           .from('customer_payments')
@@ -94,15 +94,15 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
       final paid = {for (final c in AppCurrency.values) c: 0.0};
       final entries = <_Entry>[];
 
-      for (final h in harvests) {
-        final kg = (h['kg_harvested'] as num).toDouble();
+      for (final h in sales) {
+        final kg = (h['kg_sold'] as num).toDouble();
         final pricePerKg = (h['price_per_kg'] as num).toDouble();
         final total = kg * pricePerKg;
         final currency = AppCurrency.fromCode(h['currency'] as String?);
         sold[currency] = (sold[currency] ?? 0) + total;
         entries.add(
           _Entry(
-            date: DateTime.parse(h['harvest_date'] as String),
+            date: DateTime.parse(h['sale_date'] as String),
             label: 'Harvest sale',
             subtitle:
                 '${kg.toStringAsFixed(1)} kg @ ${formatMoney(pricePerKg, currency)}/kg',

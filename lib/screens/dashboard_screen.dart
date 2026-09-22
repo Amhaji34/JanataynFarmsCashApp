@@ -130,11 +130,11 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
       // 3. All transactions (fine for small volume; we'll optimize later if needed)
       final txns = await supabase.from('transactions').select();
 
-      // 4. Harvests + customer payments -> owed by customers, this month's
-      // harvest sales value.
-      final harvests = await supabase
-          .from('harvests')
-          .select('kg_harvested, price_per_kg, harvest_date, currency');
+      // 4. Harvest sales + customer payments -> owed by customers, this
+      // month's harvest sales value.
+      final harvestSales = await supabase
+          .from('harvest_sales')
+          .select('kg_sold, price_per_kg, sale_date, currency');
       final customerPayments = await supabase
           .from('customer_payments')
           .select('amount, currency');
@@ -218,14 +218,14 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
 
       final harvestTotalValue = _emptyTotals();
       final monthHarvestValue = _emptyTotals();
-      for (final h in harvests) {
+      for (final h in harvestSales) {
         final currency = AppCurrency.fromCode(h['currency'] as String?);
         final value =
-            (h['kg_harvested'] as num).toDouble() *
+            (h['kg_sold'] as num).toDouble() *
             (h['price_per_kg'] as num).toDouble();
         harvestTotalValue[currency] =
             (harvestTotalValue[currency] ?? 0) + value;
-        final date = DateTime.parse(h['harvest_date'] as String);
+        final date = DateTime.parse(h['sale_date'] as String);
         if (date.year == now.year && date.month == now.month) {
           monthHarvestValue[currency] =
               (monthHarvestValue[currency] ?? 0) + value;
@@ -519,7 +519,7 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                         const Divider(height: 1),
                         _monthRow(
                           Icons.eco_outlined,
-                          'Harvest',
+                          'Harvest sales',
                           _monthHarvestValue,
                           AppColors.brandGreenLight,
                           onTap: () => Navigator.of(context).push(

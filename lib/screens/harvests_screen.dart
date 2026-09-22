@@ -5,11 +5,14 @@ import '../theme/app_theme.dart';
 import '../utils/currency.dart';
 import '../widgets/app_ui.dart';
 import 'add_harvest_screen.dart';
+import 'harvest_detail_screen.dart';
 
 /// Every harvest logged, newest first, with summary stats (how many
-/// harvests, total kg, total value, how much of that has been collected).
-/// Each harvest doubles as its sale record - see add_harvest_screen.dart.
-/// Value/outstanding are tracked per currency - never blended.
+/// harvests, total kg, total sale value, how much of that has been
+/// collected). A harvest is pure inventory intake - see
+/// add_harvest_screen.dart - and can be sold to more than one customer
+/// over time via harvest_detail_screen.dart. Value/outstanding are
+/// tracked per currency - never blended.
 class HarvestsScreen extends StatefulWidget {
   const HarvestsScreen({super.key});
 
@@ -21,6 +24,10 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
   bool _loading = true;
   String? _errorMessage;
   List<Map<String, dynamic>> _harvests = [];
+
+  /// harvestId -> total kg sold across all sales against it.
+  Map<String, double> _soldByHarvest = {};
+  Map<AppCurrency, double> _totalValueByCurrency = {};
   Map<AppCurrency, double> _paidTotals = {};
   String? _role;
 
@@ -48,8 +55,25 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
     try {
       final harvestsData = await supabase
           .from('harvests')
-          .select('*, customers(name)')
+          .select()
           .order('harvest_date', ascending: false);
+
+      final salesData = await supabase
+          .from('harvest_sales')
+          .select('harvest_id, kg_sold, price_per_kg, currency');
+      final sales = List<Map<String, dynamic>>.from(salesData);
+
+      final soldByHarvest = <String, double>{};
+      final totalValue = {for (final c in AppCurrency.values) c: 0.0};
+      for (final s in sales) {
+        final harvestId = s['harvest_id'] as String;
+        final kg = (s['kg_sold'] as num).toDouble();
+        soldByHarvest[harvestId] = (soldByHarvest[harvestId] ?? 0) + kg;
+        final currency = AppCurrency.fromCode(s['currency'] as String?);
+        totalValue[currency] =
+            (totalValue[currency] ?? 0) +
+            kg * (s['price_per_kg'] as num).toDouble();
+      }
 
       final paymentsData = await supabase
           .from('customer_payments')
@@ -63,6 +87,8 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
 
       setState(() {
         _harvests = List<Map<String, dynamic>>.from(harvestsData);
+        _soldByHarvest = soldByHarvest;
+        _totalValueByCurrency = totalValue;
         _paidTotals = paidTotals;
         _loading = false;
       });
@@ -79,31 +105,30 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
     (sum, h) => sum + (h['kg_harvested'] as num).toDouble(),
   );
 
-  Map<AppCurrency, double> get _totalValueByCurrency {
-    final totals = {for (final c in AppCurrency.values) c: 0.0};
-    for (final h in _harvests) {
-      final currency = AppCurrency.fromCode(h['currency'] as String?);
-      totals[currency] =
-          (totals[currency] ?? 0) +
-          (h['kg_harvested'] as num).toDouble() *
-              (h['price_per_kg'] as num).toDouble();
-    }
-    return totals;
-  }
-
-  Map<AppCurrency, double> get _totalOutstandingByCurrency {
-    final value = _totalValueByCurrency;
-    return {
-      for (final c in AppCurrency.values)
-        c: (value[c] ?? 0) - (_paidTotals[c] ?? 0),
-    };
-  }
+  Map<AppCurrency, double> get _totalOutstandingByCurrency => {
+    for (final c in AppCurrency.values)
+      c: (_totalValueByCurrency[c] ?? 0) - (_paidTotals[c] ?? 0),
+  };
 
   Future<void> _openAddHarvest() async {
     final result = await Navigator.of(
       context,
     ).push<bool>(MaterialPageRoute(builder: (_) => const AddHarvestScreen()));
     if (result == true) _load();
+  }
+
+  Future<void> _openHarvest(Map<String, dynamic> h) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => HarvestDetailScreen(
+          harvestId: h['id'] as String,
+          harvestDate: DateTime.parse(h['harvest_date'] as String),
+          kgHarvested: (h['kg_harvested'] as num).toDouble(),
+          note: h['note'] as String?,
+        ),
+      ),
+    );
+    _load();
   }
 
   @override
@@ -171,7 +196,7 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                               ),
                               const SizedBox(height: 10),
                               const Text(
-                                'Total value',
+                                'Total sold',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: AppColors.inkSecondary,
@@ -244,13 +269,9 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                   else
                     ..._harvests.map((h) {
                       final kg = (h['kg_harvested'] as num).toDouble();
-                      final pricePerKg = (h['price_per_kg'] as num).toDouble();
-                      final total = kg * pricePerKg;
-                      final currency = AppCurrency.fromCode(
-                        h['currency'] as String?,
-                      );
-                      final customerName =
-                          h['customers']?['name'] as String? ?? 'Unknown';
+                      final sold = _soldByHarvest[h['id']] ?? 0;
+                      final remaining = (kg - sold).clamp(0, double.infinity);
+                      final fullySold = remaining <= 0.01;
                       final date = DateTime.parse(h['harvest_date'] as String);
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 10),
@@ -259,11 +280,14 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                             horizontal: 14,
                             vertical: 12,
                           ),
+                          onTap: () => _openHarvest(h),
                           child: Row(
                             children: [
-                              const IconBadge(
+                              IconBadge(
                                 icon: Icons.eco_outlined,
-                                color: AppColors.brandGreenLight,
+                                color: fullySold
+                                    ? AppColors.neutral
+                                    : AppColors.brandGreenLight,
                               ),
                               const SizedBox(width: 12),
                               Expanded(
@@ -271,7 +295,7 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      customerName,
+                                      _dateFormat.format(date),
                                       style: const TextStyle(
                                         fontSize: 14.5,
                                         fontWeight: FontWeight.w600,
@@ -280,17 +304,10 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                                     ),
                                     const SizedBox(height: 3),
                                     Text(
-                                      '${kg.toStringAsFixed(1)} kg @ ${formatMoney(pricePerKg, currency)}/kg',
+                                      '${kg.toStringAsFixed(1)} kg harvested · '
+                                      '${sold.toStringAsFixed(1)} kg sold',
                                       style: const TextStyle(
                                         fontSize: 12,
-                                        color: AppColors.inkMuted,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      _dateFormat.format(date),
-                                      style: const TextStyle(
-                                        fontSize: 11.5,
                                         color: AppColors.inkMuted,
                                       ),
                                     ),
@@ -298,12 +315,15 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                                 ),
                               ),
                               Text(
-                                formatMoney(total, currency),
-                                style: const TextStyle(
-                                  fontSize: 15,
+                                fullySold
+                                    ? 'Fully sold'
+                                    : '${remaining.toStringAsFixed(1)} kg left',
+                                style: TextStyle(
+                                  fontSize: 12.5,
                                   fontWeight: FontWeight.w700,
-                                  letterSpacing: -0.2,
-                                  color: AppColors.brandGreenDeep,
+                                  color: fullySold
+                                      ? AppColors.inkMuted
+                                      : AppColors.cashIn,
                                 ),
                               ),
                             ],
