@@ -212,13 +212,19 @@ Ledger of fund additions and transfers between accounts — separate from
 ```
 id                  uuid (PK)
 account_id          uuid (FK -> accounts.id)
-type                text, one of: 'fund_add' | 'transfer_in' | 'transfer_out'
+type                text, one of: 'fund_add' | 'transfer_in' |
+                    'transfer_out' | 'exchange_in' | 'exchange_out'
 amount              numeric (> 0)
 currency            text, 'USD' | 'SLSH' (default 'USD') — a transfer's
                     transfer_out/transfer_in pair always share one
-                    currency; there is no conversion
+                    currency (there is no conversion on a transfer); an
+                    exchange's exchange_out/exchange_in pair are
+                    deliberately in *different* currencies — see
+                    "Currency exchange" below
 related_account_id  uuid (nullable, FK -> accounts.id) — the other side of
-                    a transfer
+                    a transfer; null for exchange_out/exchange_in, since
+                    an exchange has no "other account", just another
+                    currency on the same one
 note                text (nullable)
 transaction_date    date
 created_by          uuid (FK -> auth.users.id)
@@ -419,6 +425,33 @@ below), never summed together into one blended figure.
   screen that needs to act on "the" balance (like
   record_payment_screen.dart validating a payment) first has the user
   pick which currency's balance they mean.
+
+### Currency exchange
+
+The one deliberate exception to "no exchange rate anywhere in this
+app": `exchange_screen.dart` lets the admin convert part of one
+account's existing balance from USD to SLSH or back, for when they
+physically exchange cash with a money changer. There's still no
+*stored* rate — the form has "You give" and "You receive" fields and the
+user types both amounts directly (exactly what the money changer hands
+back), rather than the app computing one from a rate it would have to
+keep updated. Saving writes two `account_transactions` rows on the
+**same** `account_id` (no `related_account_id` — an exchange isn't a
+transfer to another account): an `exchange_out` in the source currency
+for the "give" amount, and an `exchange_in` in the destination currency
+for the "receive" amount. Available balance is validated against that
+account's existing balance in the source currency, same pattern as
+Transfer. Reached from the Accounts screen's "Exchange" button
+(alongside "Add funds"); works on any of the 4 accounts, including
+Petty Cash. Every place that sums `account_transactions` by type to
+compute a balance (`settings_screen.dart`, `transfer_funds_screen.dart`,
+`account_history_screen.dart`, `dashboard_screen.dart`'s cash-on-hand)
+treats `exchange_in` like `transfer_in` (+) and `exchange_out` like
+`transfer_out` (-) — the same "sum grouped by currency" pattern as the
+rest of "Currencies" above, just with two more type values folded in.
+Exchanges don't currently show up in the Transactions log's merged
+Petty Cash view (that only merges transfers) — they're visible via each
+account's own History screen.
 
 ## Harvests and customer sales
 
@@ -705,13 +738,24 @@ lib/
 │   ├── settings_screen.dart       — the "Accounts" section: the 4
 │   │                                 funding-account balances as tappable
 │   │                                 cards (→ AccountHistoryScreen) plus
-│   │                                 "Add funds" and "Transfer" buttons.
-│   │                                 No opening-balance field anymore -
-│   │                                 see the `settings` table note above.
-│   │                                 Reached from the drawer.
+│   │                                 "Add funds"/"Exchange" buttons and a
+│   │                                 "Transfer" link. No opening-balance
+│   │                                 field anymore - see the `settings`
+│   │                                 table note above. Reached from the
+│   │                                 drawer.
 │   ├── add_funds_screen.dart      — adds funds to Investment, Loans, or
 │   │                                 Revenue only (Petty Cash excluded).
 │   │                                 Inserts one `fund_add` row.
+│   ├── exchange_screen.dart       — converts part of one account's
+│   │                                 existing balance from USD to SLSH
+│   │                                 or back (see "Currency exchange"
+│   │                                 above). Works on any of the 4
+│   │                                 accounts, including Petty Cash.
+│   │                                 User types both the amount given
+│   │                                 and the amount received — no rate
+│   │                                 is stored. Inserts an
+│   │                                 exchange_out + exchange_in pair on
+│   │                                 the same account.
 │   ├── transfer_funds_screen.dart — moves funds between Petty Cash and one
 │   │                                 of Investment/Loans/Revenue, either
 │   │                                 direction. A "To Petty Cash / From
@@ -736,7 +780,12 @@ lib/
 │   │                                 that's what actually moves its
 │   │                                 balance (transfer_out on Petty Cash
 │   │                                 only exists since transfers became
-│   │                                 bidirectional).
+│   │                                 bidirectional). Also shows
+│   │                                 exchange_in/exchange_out rows
+│   │                                 ("Exchanged from/to <currency>")
+│   │                                 for any account, including Petty
+│   │                                 Cash - not shown in the Transactions
+│   │                                 log, only here.
 │   ├── transaction_log_screen.dart — searchable, filterable list of all
 │   │                                 transactions, plus Petty Cash's
 │   │                                 transfer_in/transfer_out rows merged

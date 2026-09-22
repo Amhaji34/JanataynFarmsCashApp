@@ -103,24 +103,28 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
           .single();
       final opening = (settingsRow['value'] as num).toDouble();
 
-      // 2b. Petty Cash top-ups (transfers in from Investment/Loans/Revenue -
-      // the only way Petty Cash is ever funded; see Settings > Accounts).
+      // 2b. Petty Cash's own ledger: transfers in/out to Investment/Loans/
+      // Revenue, and currency exchanges (see Settings > Accounts).
       final pettyCashAccount = await supabase
           .from('accounts')
           .select()
           .eq('name', 'Petty Cash')
           .single();
-      final transfersIn = await supabase
+      final pettyCashLedger = await supabase
           .from('account_transactions')
-          .select('amount, currency')
-          .eq('account_id', pettyCashAccount['id'])
-          .eq('type', 'transfer_in');
-      final pettyCashTransfersIn = _emptyTotals();
-      for (final t in transfersIn) {
+          .select('amount, currency, type')
+          .eq('account_id', pettyCashAccount['id']);
+      final pettyCashLedgerNet = _emptyTotals();
+      for (final t in pettyCashLedger) {
         final currency = AppCurrency.fromCode(t['currency'] as String?);
-        pettyCashTransfersIn[currency] =
-            (pettyCashTransfersIn[currency] ?? 0) +
-            (t['amount'] as num).toDouble();
+        final amount = (t['amount'] as num).toDouble();
+        if (t['type'] == 'transfer_in' || t['type'] == 'exchange_in') {
+          pettyCashLedgerNet[currency] =
+              (pettyCashLedgerNet[currency] ?? 0) + amount;
+        } else if (t['type'] == 'transfer_out' || t['type'] == 'exchange_out') {
+          pettyCashLedgerNet[currency] =
+              (pettyCashLedgerNet[currency] ?? 0) - amount;
+        }
       }
 
       // 3. All transactions (fine for small volume; we'll optimize later if needed)
@@ -151,7 +155,7 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
       final cash = _emptyTotals();
       cash[AppCurrency.usd] = (cash[AppCurrency.usd] ?? 0) + opening;
       for (final c in AppCurrency.values) {
-        cash[c] = (cash[c] ?? 0) + (pettyCashTransfersIn[c] ?? 0);
+        cash[c] = (cash[c] ?? 0) + (pettyCashLedgerNet[c] ?? 0);
       }
       final loansOut = _emptyTotals();
       final loansRepaid = _emptyTotals();

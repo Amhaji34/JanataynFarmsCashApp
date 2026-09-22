@@ -5,8 +5,8 @@ import '../theme/app_theme.dart';
 import '../utils/currency.dart';
 import '../widgets/app_ui.dart';
 
-/// Which of the two summary totals (if any) an entry counts toward.
-enum _EntryKind { fundAdd, transfer, other }
+/// Which of the summary totals (if any) an entry counts toward.
+enum _EntryKind { fundAdd, transfer, exchange, other }
 
 class _Entry {
   _Entry({
@@ -116,6 +116,9 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
   Map<AppCurrency, double> get _totalTransferred =>
       _sumByCurrency((e) => e.kind == _EntryKind.transfer);
 
+  AppCurrency _otherCurrency(AppCurrency currency) =>
+      currency == AppCurrency.usd ? AppCurrency.slsh : AppCurrency.usd;
+
   Future<void> _pickDateRange() async {
     final picked = await showDateRangePicker(
       context: context,
@@ -196,6 +199,36 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                 color: AppColors.cashIn,
                 icon: Icons.arrow_downward,
                 kind: _EntryKind.transfer,
+              ),
+            );
+            break;
+          case 'exchange_out':
+            entries.add(
+              _Entry(
+                date: date,
+                createdAt: createdAt,
+                label: 'Exchanged to ${_otherCurrency(currency).code}',
+                amount: amount,
+                currency: currency,
+                isPositive: false,
+                color: AppColors.brandNavy,
+                icon: Icons.currency_exchange,
+                kind: _EntryKind.exchange,
+              ),
+            );
+            break;
+          case 'exchange_in':
+            entries.add(
+              _Entry(
+                date: date,
+                createdAt: createdAt,
+                label: 'Exchanged from ${_otherCurrency(currency).code}',
+                amount: amount,
+                currency: currency,
+                isPositive: true,
+                color: AppColors.cashIn,
+                icon: Icons.currency_exchange,
+                kind: _EntryKind.exchange,
               ),
             );
             break;

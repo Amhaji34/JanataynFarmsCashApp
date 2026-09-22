@@ -5,6 +5,7 @@ import '../utils/currency.dart';
 import '../widgets/app_ui.dart';
 import 'account_history_screen.dart';
 import 'add_funds_screen.dart';
+import 'exchange_screen.dart';
 import 'transfer_funds_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -68,9 +69,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           if (t['account_id'] != id) continue;
           final currency = AppCurrency.fromCode(t['currency'] as String?);
           final amount = (t['amount'] as num).toDouble();
-          if (t['type'] == 'fund_add' || t['type'] == 'transfer_in') {
+          if (t['type'] == 'fund_add' ||
+              t['type'] == 'transfer_in' ||
+              t['type'] == 'exchange_in') {
             balance[currency] = (balance[currency] ?? 0) + amount;
-          } else if (t['type'] == 'transfer_out') {
+          } else if (t['type'] == 'transfer_out' ||
+              t['type'] == 'exchange_out') {
             balance[currency] = (balance[currency] ?? 0) - amount;
           }
         }
@@ -121,6 +125,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => const TransferFundsScreen()),
     );
+    if (result == true) _loadAccounts();
+  }
+
+  Future<void> _openExchange() async {
+    final result = await Navigator.of(
+      context,
+    ).push<bool>(MaterialPageRoute(builder: (_) => const ExchangeScreen()));
     if (result == true) _loadAccounts();
   }
 
@@ -246,14 +257,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   }).toList(),
                 ),
                 const SizedBox(height: 14),
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: OutlinedButton.icon(
-                    onPressed: _openAddFunds,
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Add funds'),
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 50,
+                        child: OutlinedButton.icon(
+                          onPressed: _openAddFunds,
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text('Add funds'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: SizedBox(
+                        height: 50,
+                        child: OutlinedButton.icon(
+                          onPressed: _openExchange,
+                          icon: const Icon(Icons.currency_exchange, size: 18),
+                          label: const Text('Exchange'),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

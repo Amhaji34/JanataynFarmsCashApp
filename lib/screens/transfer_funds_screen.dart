@@ -91,9 +91,12 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
           if (t['account_id'] != id) continue;
           final currency = t['currency'] as String? ?? AppCurrency.usd.code;
           final amount = (t['amount'] as num).toDouble();
-          if (t['type'] == 'fund_add' || t['type'] == 'transfer_in') {
+          if (t['type'] == 'fund_add' ||
+              t['type'] == 'transfer_in' ||
+              t['type'] == 'exchange_in') {
             byCurrency[currency] = (byCurrency[currency] ?? 0) + amount;
-          } else if (t['type'] == 'transfer_out') {
+          } else if (t['type'] == 'transfer_out' ||
+              t['type'] == 'exchange_out') {
             byCurrency[currency] = (byCurrency[currency] ?? 0) - amount;
           }
         }
@@ -118,10 +121,10 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
         if (t['account_id'] != pettyCashId) continue;
         final currency = t['currency'] as String? ?? AppCurrency.usd.code;
         final amount = (t['amount'] as num).toDouble();
-        if (t['type'] == 'transfer_in') {
+        if (t['type'] == 'transfer_in' || t['type'] == 'exchange_in') {
           pettyCashBalances[currency] =
               (pettyCashBalances[currency] ?? 0) + amount;
-        } else if (t['type'] == 'transfer_out') {
+        } else if (t['type'] == 'transfer_out' || t['type'] == 'exchange_out') {
           pettyCashBalances[currency] =
               (pettyCashBalances[currency] ?? 0) - amount;
         }
