@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../main.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_ui.dart';
+import 'staff_detail_screen.dart';
 
 class StaffScreen extends StatefulWidget {
   const StaffScreen({super.key});
@@ -15,6 +16,7 @@ class _StaffScreenState extends State<StaffScreen> {
   bool _loading = true;
   String? _errorMessage;
   List<Map<String, dynamic>> _staff = [];
+  Map<String, double> _owed = {};
 
   final _nameController = TextEditingController();
   final _salaryController = TextEditingController();
@@ -40,8 +42,34 @@ class _StaffScreenState extends State<StaffScreen> {
     setState(() => _loading = true);
     try {
       final data = await supabase.from('staff').select().order('name');
+      final staff = List<Map<String, dynamic>>.from(data);
+
+      final advanceData = await supabase
+          .from('transactions')
+          .select('type, amount, related_staff_id')
+          .inFilter('type', ['advance', 'advance_deduction']);
+      final advanceTxns = List<Map<String, dynamic>>.from(advanceData);
+
+      final owed = <String, double>{};
+      for (final member in staff) {
+        final id = member['id'] as String;
+        double given = 0;
+        double deducted = 0;
+        for (final t in advanceTxns) {
+          if (t['related_staff_id'] != id) continue;
+          final amount = (t['amount'] as num).toDouble();
+          if (t['type'] == 'advance') {
+            given += amount;
+          } else {
+            deducted += amount;
+          }
+        }
+        owed[id] = given - deducted;
+      }
+
       setState(() {
-        _staff = List<Map<String, dynamic>>.from(data);
+        _staff = staff;
+        _owed = owed;
         _loading = false;
       });
     } catch (e) {
@@ -50,6 +78,19 @@ class _StaffScreenState extends State<StaffScreen> {
         _loading = false;
       });
     }
+  }
+
+  Future<void> _openStaff(Map<String, dynamic> member) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => StaffDetailScreen(
+          staffId: member['id'] as String,
+          staffName: member['name'] as String,
+          baseSalary: (member['base_salary'] as num).toDouble(),
+        ),
+      ),
+    );
+    _loadStaff();
   }
 
   Future<void> _addStaff() async {
@@ -111,10 +152,9 @@ class _StaffScreenState extends State<StaffScreen> {
                       Expanded(
                         child: TextField(
                           controller: _salaryController,
-                          keyboardType:
-                              const TextInputType.numberWithOptions(
-                                decimal: true,
-                              ),
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
                           decoration: const InputDecoration(
                             hintText: 'Base salary',
                             isDense: true,
@@ -185,19 +225,21 @@ class _StaffScreenState extends State<StaffScreen> {
                       itemBuilder: (context, index) {
                         final member = _staff[index];
                         final name = member['name'] as String;
+                        final owed = _owed[member['id']] ?? 0;
+                        final hasDebt = owed > 0.01;
                         return AppCard(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 14,
                             vertical: 12,
                           ),
+                          onTap: () => _openStaff(member),
                           child: Row(
                             children: [
                               InitialsAvatar(name: name),
                               const SizedBox(width: 13),
                               Expanded(
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       name,
@@ -208,9 +250,9 @@ class _StaffScreenState extends State<StaffScreen> {
                                       ),
                                     ),
                                     const SizedBox(height: 2),
-                                    const Text(
-                                      'Base salary',
-                                      style: TextStyle(
+                                    Text(
+                                      'Base salary: ${_currency.format((member['base_salary'] as num).toDouble())}',
+                                      style: const TextStyle(
                                         fontSize: 12,
                                         color: AppColors.inkMuted,
                                       ),
@@ -218,15 +260,30 @@ class _StaffScreenState extends State<StaffScreen> {
                                   ],
                                 ),
                               ),
-                              Text(
-                                _currency.format(
-                                  (member['base_salary'] as num).toDouble(),
-                                ),
-                                style: const TextStyle(
-                                  fontSize: 14.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.payroll,
-                                ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    hasDebt ? 'Owes' : 'Settled',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: hasDebt
+                                          ? AppColors.advance
+                                          : AppColors.cashIn,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    _currency.format(owed.abs()),
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
+                                      color: hasDebt
+                                          ? AppColors.advance
+                                          : AppColors.cashIn,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),

@@ -8,13 +8,15 @@ import 'customers_screen.dart';
 import 'harvests_screen.dart';
 import 'partners_screen.dart';
 import 'report_screen.dart';
+import 'staff_screen.dart';
 import 'transaction_log_screen.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/app_ui.dart';
 
 /// The current calendar month as a range, for deep-linking the "This
-/// month" dashboard rows into Reports pre-filtered to the same period.
+/// month" dashboard rows into Reports/Transactions pre-filtered to the
+/// same period.
 DateTimeRange _thisMonthRange() {
   final now = DateTime.now();
   final start = DateTime(now.year, now.month, 1);
@@ -45,7 +47,7 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
   double _outstandingLoans = 0;
   double _outstandingAdvances = 0;
   double _owedByCustomers = 0;
-  double _monthExpenses = 0;
+  double _monthCashOut = 0;
   double _monthBills = 0;
   double _monthPayroll = 0;
   double _monthAdvancesGiven = 0;
@@ -148,7 +150,7 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
       double loansRepaid = 0;
       double advancesOut = 0;
       double advancesCleared = 0;
-      double monthExpenses = 0;
+      double monthCashOut = 0;
 
       final now = DateTime.now();
       double monthBills = 0;
@@ -166,24 +168,28 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
             cash -= amount;
             if (isThisMonth) {
               monthBills += amount;
-              monthExpenses += amount;
+              monthCashOut += amount;
             }
             break;
           case 'payroll':
             cash -= amount;
             if (isThisMonth) {
               monthPayroll += amount;
-              monthExpenses += amount;
+              monthCashOut += amount;
             }
             break;
           case 'loan':
             cash -= amount;
             loansOut += amount;
+            if (isThisMonth) monthCashOut += amount;
             break;
           case 'advance':
             cash -= amount;
             advancesOut += amount;
-            if (isThisMonth) monthAdvances += amount;
+            if (isThisMonth) {
+              monthAdvances += amount;
+              monthCashOut += amount;
+            }
             break;
           case 'loan_repayment':
             cash += amount;
@@ -226,7 +232,7 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
         _outstandingLoans = loansOut - loansRepaid;
         _outstandingAdvances = advancesOut - advancesCleared;
         _owedByCustomers = harvestTotalValue - totalPaidByCustomers;
-        _monthExpenses = monthExpenses;
+        _monthCashOut = monthCashOut;
         _monthBills = monthBills;
         _monthPayroll = monthPayroll;
         _monthAdvancesGiven = monthAdvances;
@@ -323,9 +329,7 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                           color: AppColors.advance,
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (_) => const ReportScreen(
-                                initialAccount: 'Advances',
-                              ),
+                              builder: (_) => const StaffScreen(),
                             ),
                           ),
                         ),
@@ -352,13 +356,12 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                       Expanded(
                         child: StatTile(
                           icon: Icons.calendar_month_outlined,
-                          label: 'This month\'s expenses',
-                          value: _formatCurrency(_monthExpenses),
+                          label: 'This month\'s cash out',
+                          value: _formatCurrency(_monthCashOut),
                           color: AppColors.brandNavy,
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (_) => ReportScreen(
-                                initialAccount: 'Expenses',
+                              builder: (_) => TransactionLogScreen(
                                 initialDateRange: _thisMonthRange(),
                               ),
                             ),

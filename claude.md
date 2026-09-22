@@ -502,29 +502,45 @@ lib/
 │   │                                 hand, outstanding loans/advances,
 │   │                                 owed-by-customers, and this-month
 │   │                                 totals (including revenue collected
-│   │                                 and harvest sales value). Pull to
-│   │                                 refresh (`RefreshIndicator` around
-│   │                                 the body) re-runs the same load.
-│   │                                 Every stat tile and "This month" row
-│   │                                 is tappable and deep-links into the
-│   │                                 screen that has the underlying log:
-│   │                                 the cash hero → Petty Cash's
-│   │                                 AccountHistoryScreen; owed-by-
-│   │                                 partners → PartnersScreen; owed-by-
-│   │                                 staff and the Expenses/Payroll/
-│   │                                 Advances "this month" rows →
-│   │                                 ReportScreen (with `initialAccount`
-│   │                                 and, for the "this month" rows,
+│   │                                 and harvest sales value). The
+│   │                                 "This month's cash out" stat
+│   │                                 (`_monthCashOut`) sums every
+│   │                                 same-month expense + payroll + loan
+│   │                                 + advance — deliberately not just
+│   │                                 `expense`-type transactions, since
+│   │                                 the point is total money leaving the
+│   │                                 business this month, not one
+│   │                                 category of it (`loan_repayment` and
+│   │                                 `advance_deduction` are cash-in /
+│   │                                 non-cash respectively, so excluded).
+│   │                                 Pull to refresh (`RefreshIndicator`
+│   │                                 around the body) re-runs the same
+│   │                                 load. Every stat tile and "This
+│   │                                 month" row is tappable and
+│   │                                 deep-links into the screen with the
+│   │                                 underlying log: the cash hero →
+│   │                                 Petty Cash's AccountHistoryScreen;
+│   │                                 owed-by-partners → PartnersScreen;
+│   │                                 owed-by-staff → StaffScreen (both
+│   │                                 list every person with their
+│   │                                 outstanding balance and open a
+│   │                                 detail/history screen on tap — see
+│   │                                 those entries below); owed-by-
+│   │                                 customers → CustomersScreen (same
+│   │                                 list+detail pattern); "This month's
+│   │                                 cash out" → TransactionLogScreen
+│   │                                 pre-filtered to the current month;
+│   │                                 the Expenses/Payroll/Advances "this
+│   │                                 month" rows → ReportScreen (with
+│   │                                 `initialAccount` and
 │   │                                 `initialDateRange` pre-set to the
 │   │                                 current calendar month via the
 │   │                                 top-level `_thisMonthRange()`
-│   │                                 helper); owed-by-customers →
-│   │                                 CustomersScreen; the Revenue row →
-│   │                                 Revenue's AccountHistoryScreen; the
-│   │                                 Harvest row → HarvestsScreen. FAB to
-│   │                                 add a transaction (admin only);
-│   │                                 drawer for navigation to everything
-│   │                                 else.
+│   │                                 helper); the Revenue row → Revenue's
+│   │                                 AccountHistoryScreen; the Harvest
+│   │                                 row → HarvestsScreen. FAB to add a
+│   │                                 transaction (admin only); drawer for
+│   │                                 navigation to everything else.
 │   ├── add_transaction_screen.dart — type selector (expense/loan/advance
 │   │                                 — no payroll, see payroll_screen.dart),
 │   │                                 partner/staff dropdown when relevant,
@@ -551,9 +567,33 @@ lib/
 │   │                                 an add-new form; reached via the
 │   │                                 "Manage categories" link on the Add
 │   │                                 Transaction screen or the drawer.
-│   ├── staff_screen.dart          — list of staff (name + base salary)
-│   │                                 with an add-new form. Reached from
-│   │                                 the drawer.
+│   ├── staff_screen.dart          — list of staff, each showing base
+│   │                                 salary and an "Owes"/"Settled" badge
+│   │                                 with their outstanding advance
+│   │                                 balance (sum(advance.amount) -
+│   │                                 sum(advance_deduction.amount) for
+│   │                                 that staff member, same formula as
+│   │                                 the "Advance handling detail"
+│   │                                 section above), plus an add-new
+│   │                                 form. Tapping a staff member opens
+│   │                                 staff_detail_screen.dart. Reached
+│   │                                 from the drawer.
+│   ├── staff_detail_screen.dart   — one staff member's outstanding
+│   │                                 advance balance plus their merged
+│   │                                 history: "Advance given" (increases
+│   │                                 what they owe), "Deducted from
+│   │                                 payroll" (reduces it, shown without
+│   │                                 a +/- sign since — per the Design
+│   │                                 language section — advance_deduction
+│   │                                 moves no real cash), and "Payroll
+│   │                                 paid" (shown for context; doesn't
+│   │                                 affect the advance balance). Same
+│   │                                 merge-and-sort-by-date shape as
+│   │                                 customer_detail_screen.dart, but
+│   │                                 read-only — no record-payment flow,
+│   │                                 since advances are only ever cleared
+│   │                                 via a payroll deduction, not repaid
+│   │                                 directly.
 │   ├── partners_screen.dart       — list of partners, each showing an
 │   │                                 "Owes"/"Settled" badge with their
 │   │                                 outstanding loan balance (calculated
@@ -601,7 +641,11 @@ lib/
 │   │                                 transactions, plus Petty Cash's
 │   │                                 transfer_in/transfer_out rows merged
 │   │                                 in for display only (see "Funding
-│   │                                 accounts" above). Search bar (matches
+│   │                                 accounts" above). Takes an optional
+│   │                                 `initialDateRange` constructor param
+│   │                                 (seeds `_dateRange`) so a dashboard
+│   │                                 tile can deep-link straight into a
+│   │                                 pre-filtered view. Search bar (matches
 │   │                                 note/partner/staff/category), date
 │   │                                 range filter, the 4 main per-type
 │   │                                 total cards (Expenses/Payroll/

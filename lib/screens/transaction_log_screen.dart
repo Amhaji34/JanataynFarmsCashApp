@@ -6,7 +6,11 @@ import '../widgets/app_ui.dart';
 import 'add_transaction_screen.dart';
 
 class TransactionLogScreen extends StatefulWidget {
-  const TransactionLogScreen({super.key});
+  const TransactionLogScreen({super.key, this.initialDateRange});
+
+  /// Pre-applies a date filter (e.g. "this month") when deep-linking in
+  /// from a dashboard stat tile.
+  final DateTimeRange? initialDateRange;
 
   @override
   State<TransactionLogScreen> createState() => _TransactionLogScreenState();
@@ -31,7 +35,7 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
   final _searchController = TextEditingController();
   String _searchQuery = '';
 
-  DateTimeRange? _dateRange;
+  late DateTimeRange? _dateRange = widget.initialDateRange;
 
   final _currency = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
   final _dateFormat = DateFormat('MMM d');
