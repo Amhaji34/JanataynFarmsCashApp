@@ -450,22 +450,30 @@ lib/
 ├── widgets/
 │   └── app_drawer.dart            — side navigation Drawer, opened via
 │                                     the dashboard's hamburger icon.
-│                                     "Accounts" (admin only) is the very
-│                                     first item, above Transactions —
-│                                     it's the entry point to the funding
-│                                     accounts, used often enough to
-│                                     deserve top placement rather than
-│                                     living under "MANAGE". Always shows
-│                                     Transactions + Reports + Harvests +
-│                                     Customers + Log out (read-only, so
-│                                     viewers see them too); shows "Run
-│                                     Payroll" plus a "MANAGE" section
-│                                     (Expense categories, Staff, Partners)
-│                                     for admins only. "Accounts" navigates
-│                                     to settings_screen.dart — the nav
-│                                     label was renamed from "Settings"
-│                                     since that screen is entirely about
-│                                     the 4 funding accounts now (see the
+│                                     Two visual groups (a plain Divider
+│                                     between them, no header text since
+│                                     the second group isn't purely
+│                                     admin-only): **group 1** — Accounts,
+│                                     Harvests, Run Payroll, Transactions,
+│                                     Reports; **group 2** — Expense
+│                                     categories, Customers, Staff,
+│                                     Partners. Accounts/Run
+│                                     Payroll/Expense categories/Staff/
+│                                     Partners are admin-only (each
+│                                     individually gated, not a block
+│                                     spread, since group 2 mixes
+│                                     admin-only items with Customers,
+│                                     which viewers see too); Harvests,
+│                                     Transactions, Reports, Customers, and
+│                                     Log out are always shown, so a
+│                                     viewer sees a shorter version of the
+│                                     same two groups rather than the
+│                                     groups disappearing outright.
+│                                     "Accounts" navigates to
+│                                     settings_screen.dart — the nav label
+│                                     was renamed from "Settings" since
+│                                     that screen is entirely about the 4
+│                                     funding accounts now (see the
 │                                     settings_screen.dart entry below).
 ├── services/
 │   └── customer_payments.dart     — `recordCustomerPayment()`, the shared
@@ -497,9 +505,26 @@ lib/
 │   │                                 and harvest sales value). Pull to
 │   │                                 refresh (`RefreshIndicator` around
 │   │                                 the body) re-runs the same load.
-│   │                                 FAB to add a transaction (admin
-│   │                                 only); drawer for navigation to
-│   │                                 everything else.
+│   │                                 Every stat tile and "This month" row
+│   │                                 is tappable and deep-links into the
+│   │                                 screen that has the underlying log:
+│   │                                 the cash hero → Petty Cash's
+│   │                                 AccountHistoryScreen; owed-by-
+│   │                                 partners → PartnersScreen; owed-by-
+│   │                                 staff and the Expenses/Payroll/
+│   │                                 Advances "this month" rows →
+│   │                                 ReportScreen (with `initialAccount`
+│   │                                 and, for the "this month" rows,
+│   │                                 `initialDateRange` pre-set to the
+│   │                                 current calendar month via the
+│   │                                 top-level `_thisMonthRange()`
+│   │                                 helper); owed-by-customers →
+│   │                                 CustomersScreen; the Revenue row →
+│   │                                 Revenue's AccountHistoryScreen; the
+│   │                                 Harvest row → HarvestsScreen. FAB to
+│   │                                 add a transaction (admin only);
+│   │                                 drawer for navigation to everything
+│   │                                 else.
 │   ├── add_transaction_screen.dart — type selector (expense/loan/advance
 │   │                                 — no payroll, see payroll_screen.dart),
 │   │                                 partner/staff dropdown when relevant,
@@ -529,8 +554,14 @@ lib/
 │   ├── staff_screen.dart          — list of staff (name + base salary)
 │   │                                 with an add-new form. Reached from
 │   │                                 the drawer.
-│   ├── partners_screen.dart       — list of partners with an add-new
-│   │                                 form. Reached from the drawer.
+│   ├── partners_screen.dart       — list of partners, each showing an
+│   │                                 "Owes"/"Settled" badge with their
+│   │                                 outstanding loan balance (calculated
+│   │                                 the same way as everywhere else:
+│   │                                 sum(loan.amount) -
+│   │                                 sum(loan_repayment.amount) for that
+│   │                                 partner), plus an add-new form.
+│   │                                 Reached from the drawer.
 │   ├── settings_screen.dart       — the "Accounts" section: the 4
 │   │                                 funding-account balances as tappable
 │   │                                 cards (→ AccountHistoryScreen) plus
@@ -585,14 +616,23 @@ lib/
 │   │                                 bottom sheet for single-invoice,
 │   │                                 full screen for multi-invoice).
 │   ├── report_screen.dart         — per-account reporting, reached from
-│   │                                 the drawer. A "Payroll / Advances /
-│   │                                 Loans / Expenses" chip selector
-│   │                                 switches which transaction type(s)
-│   │                                 are shown, with a contextual filter
-│   │                                 (staff for Payroll/Advances, partner
-│   │                                 for Loans, category for Expenses)
-│   │                                 plus a shared date-range filter and
-│   │                                 summary total cards. Payroll/
+│   │                                 the drawer (defaults to the Payroll
+│   │                                 tab with no date filter) or
+│   │                                 deep-linked from a dashboard stat
+│   │                                 tile via its optional
+│   │                                 `initialAccount`/`initialDateRange`
+│   │                                 constructor params, which just seed
+│   │                                 `_selectedAccount`/`_dateRange` — the
+│   │                                 screen behaves identically either
+│   │                                 way once opened. A "Payroll /
+│   │                                 Advances / Loans / Expenses" chip
+│   │                                 selector switches which transaction
+│   │                                 type(s) are shown, with a contextual
+│   │                                 filter (staff for Payroll/Advances,
+│   │                                 partner for Loans, category for
+│   │                                 Expenses) plus a shared date-range
+│   │                                 filter and summary total cards.
+│   │                                 Payroll/
 │   │                                 Advances/Loans show a filtered
 │   │                                 transaction list; Expenses instead
 │   │                                 shows two bar charts (spend by

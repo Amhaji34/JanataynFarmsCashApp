@@ -127,6 +127,8 @@ class AppDrawer extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.only(top: 12, bottom: 8),
               children: [
+                // Group 1: Accounts, Harvests, Run Payroll, Transactions,
+                // Reports.
                 if (isAdmin)
                   _navTile(
                     context: context,
@@ -134,6 +136,21 @@ class AppDrawer extends StatelessWidget {
                     label: 'Accounts',
                     color: AppColors.neutral,
                     destination: const SettingsScreen(),
+                  ),
+                _navTile(
+                  context: context,
+                  icon: Icons.eco_outlined,
+                  label: 'Harvests',
+                  color: AppColors.brandGreenLight,
+                  destination: const HarvestsScreen(),
+                ),
+                if (isAdmin)
+                  _navTile(
+                    context: context,
+                    icon: Icons.payments_outlined,
+                    label: 'Run Payroll',
+                    color: AppColors.payroll,
+                    destination: const PayrollScreen(),
                   ),
                 _navTile(
                   context: context,
@@ -149,13 +166,20 @@ class AppDrawer extends StatelessWidget {
                   color: AppColors.loan,
                   destination: const ReportScreen(),
                 ),
-                _navTile(
-                  context: context,
-                  icon: Icons.eco_outlined,
-                  label: 'Harvests',
-                  color: AppColors.brandGreenLight,
-                  destination: const HarvestsScreen(),
+
+                // Group 2: Expense categories, Customers, Staff, Partners.
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 10),
+                  child: Divider(height: 1, indent: 20, endIndent: 20),
                 ),
+                if (isAdmin)
+                  _navTile(
+                    context: context,
+                    icon: Icons.category_outlined,
+                    label: 'Expense categories',
+                    color: AppColors.payroll,
+                    destination: const ExpenseCategoriesScreen(),
+                  ),
                 _navTile(
                   context: context,
                   icon: Icons.groups_outlined,
@@ -164,24 +188,6 @@ class AppDrawer extends StatelessWidget {
                   destination: const CustomersScreen(),
                 ),
                 if (isAdmin) ...[
-                  _navTile(
-                    context: context,
-                    icon: Icons.payments_outlined,
-                    label: 'Run Payroll',
-                    color: AppColors.payroll,
-                    destination: const PayrollScreen(),
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(20, 18, 20, 8),
-                    child: SectionLabel('MANAGE'),
-                  ),
-                  _navTile(
-                    context: context,
-                    icon: Icons.category_outlined,
-                    label: 'Expense categories',
-                    color: AppColors.payroll,
-                    destination: const ExpenseCategoriesScreen(),
-                  ),
                   _navTile(
                     context: context,
                     icon: Icons.people_outline,

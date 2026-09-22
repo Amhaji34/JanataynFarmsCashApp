@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../main.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_ui.dart';
@@ -14,10 +15,13 @@ class _PartnersScreenState extends State<PartnersScreen> {
   bool _loading = true;
   String? _errorMessage;
   List<Map<String, dynamic>> _partners = [];
+  Map<String, double> _owed = {};
 
   final _nameController = TextEditingController();
   bool _adding = false;
   String? _addError;
+
+  final _currency = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
 
   @override
   void initState() {
@@ -35,8 +39,34 @@ class _PartnersScreenState extends State<PartnersScreen> {
     setState(() => _loading = true);
     try {
       final data = await supabase.from('partners').select().order('name');
+      final partners = List<Map<String, dynamic>>.from(data);
+
+      final loanData = await supabase
+          .from('transactions')
+          .select('type, amount, related_partner_id')
+          .inFilter('type', ['loan', 'loan_repayment']);
+      final loanTxns = List<Map<String, dynamic>>.from(loanData);
+
+      final owed = <String, double>{};
+      for (final partner in partners) {
+        final id = partner['id'] as String;
+        double lent = 0;
+        double repaid = 0;
+        for (final t in loanTxns) {
+          if (t['related_partner_id'] != id) continue;
+          final amount = (t['amount'] as num).toDouble();
+          if (t['type'] == 'loan') {
+            lent += amount;
+          } else {
+            repaid += amount;
+          }
+        }
+        owed[id] = lent - repaid;
+      }
+
       setState(() {
-        _partners = List<Map<String, dynamic>>.from(data);
+        _partners = partners;
+        _owed = owed;
         _loading = false;
       });
     } catch (e) {
@@ -160,7 +190,10 @@ class _PartnersScreenState extends State<PartnersScreen> {
                       itemCount: _partners.length,
                       separatorBuilder: (_, _) => const SizedBox(height: 10),
                       itemBuilder: (context, index) {
-                        final name = _partners[index]['name'] as String;
+                        final partner = _partners[index];
+                        final name = partner['name'] as String;
+                        final owed = _owed[partner['id']] ?? 0;
+                        final hasDebt = owed > 0.01;
                         return AppCard(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 14,
@@ -179,6 +212,31 @@ class _PartnersScreenState extends State<PartnersScreen> {
                                     color: AppColors.ink,
                                   ),
                                 ),
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    hasDebt ? 'Owes' : 'Settled',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: hasDebt
+                                          ? AppColors.loan
+                                          : AppColors.cashIn,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    _currency.format(owed.abs()),
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
+                                      color: hasDebt
+                                          ? AppColors.loan
+                                          : AppColors.cashIn,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),

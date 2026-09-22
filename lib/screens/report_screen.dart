@@ -6,7 +6,14 @@ import '../theme/app_theme.dart';
 import '../widgets/app_ui.dart';
 
 class ReportScreen extends StatefulWidget {
-  const ReportScreen({super.key});
+  const ReportScreen({super.key, this.initialAccount, this.initialDateRange});
+
+  /// Deep-links straight into one account tab (e.g. from a dashboard stat
+  /// tile) instead of defaulting to Payroll.
+  final String? initialAccount;
+
+  /// Pre-applies a date filter (e.g. "this month") when deep-linking in.
+  final DateTimeRange? initialDateRange;
 
   @override
   State<ReportScreen> createState() => _ReportScreenState();
@@ -15,7 +22,7 @@ class ReportScreen extends StatefulWidget {
 class _ReportScreenState extends State<ReportScreen> {
   static const _accounts = ['Payroll', 'Advances', 'Loans', 'Expenses'];
 
-  String _selectedAccount = 'Payroll';
+  late String _selectedAccount = widget.initialAccount ?? 'Payroll';
 
   bool _loading = true;
   String? _errorMessage;
@@ -27,7 +34,7 @@ class _ReportScreenState extends State<ReportScreen> {
   String? _selectedStaffId;
   String? _selectedPartnerId;
   String? _selectedCategoryName;
-  DateTimeRange? _dateRange;
+  late DateTimeRange? _dateRange = widget.initialDateRange;
 
   final _currency = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
   final _dateFormat = DateFormat('MMM d, yyyy');
@@ -118,7 +125,8 @@ class _ReportScreenState extends State<ReportScreen> {
       if (!_matchesDate(t)) return false;
 
       if (_selectedAccount == 'Payroll' || _selectedAccount == 'Advances') {
-        if (_selectedStaffId != null && t['related_staff_id'] != _selectedStaffId) {
+        if (_selectedStaffId != null &&
+            t['related_staff_id'] != _selectedStaffId) {
           return false;
         }
       }
@@ -157,7 +165,11 @@ class _ReportScreenState extends State<ReportScreen> {
             deducted += amount;
           }
         }
-        return {'Given': given, 'Deducted': deducted, 'Outstanding': given - deducted};
+        return {
+          'Given': given,
+          'Deducted': deducted,
+          'Outstanding': given - deducted,
+        };
       case 'Loans':
         double lent = 0, repaid = 0;
         for (final t in filtered) {
@@ -197,7 +209,9 @@ class _ReportScreenState extends State<ReportScreen> {
 
     if (sorted.length <= 7) return sorted;
     final top = sorted.take(7).toList();
-    final otherTotal = sorted.skip(7).fold<double>(0, (sum, e) => sum + e.value);
+    final otherTotal = sorted
+        .skip(7)
+        .fold<double>(0, (sum, e) => sum + e.value);
     top.add(MapEntry('Other', otherTotal));
     return top;
   }
@@ -233,9 +247,10 @@ class _ReportScreenState extends State<ReportScreen> {
         final name = t['partners']?['name'] as String? ?? '';
         return type == 'loan' ? '$name · Loan given' : '$name · Repayment';
       case 'Expenses':
-        final categories = _itemsOf(
-          t,
-        ).map((i) => i['category'] as String? ?? '').where((c) => c.isNotEmpty).toSet();
+        final categories = _itemsOf(t)
+            .map((i) => i['category'] as String? ?? '')
+            .where((c) => c.isNotEmpty)
+            .toSet();
         return categories.isNotEmpty ? categories.join(', ') : 'Expense';
       default:
         return '';
@@ -399,14 +414,15 @@ class _ReportScreenState extends State<ReportScreen> {
         barTouchData: BarTouchData(
           touchTooltipData: BarTouchTooltipData(
             getTooltipColor: (_) => AppColors.ink,
-            getTooltipItem: (group, groupIndex, rod, rodIndex) => BarTooltipItem(
-              _currency.format(rod.toY),
-              const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+            getTooltipItem: (group, groupIndex, rod, rodIndex) =>
+                BarTooltipItem(
+                  _currency.format(rod.toY),
+                  const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
           ),
         ),
         titlesData: FlTitlesData(
@@ -528,8 +544,7 @@ class _ReportScreenState extends State<ReportScreen> {
                         ),
                         showCheckmark: false,
                         visualDensity: VisualDensity.compact,
-                        materialTapTargetSize:
-                            MaterialTapTargetSize.shrinkWrap,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       );
                     },
                   ),
@@ -646,8 +661,7 @@ class _ReportScreenState extends State<ReportScreen> {
                       // "Outstanding" is the headline number — give it the
                       // account's accent; supporting figures stay neutral.
                       final isHeadline =
-                          e.key == 'Outstanding' ||
-                          e.key.startsWith('Total');
+                          e.key == 'Outstanding' || e.key.startsWith('Total');
                       final color = isHeadline
                           ? _accountColor
                           : AppColors.inkSecondary;

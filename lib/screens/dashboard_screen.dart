@@ -2,11 +2,25 @@ import 'package:flutter/material.dart';
 import '../main.dart';
 import 'login_screen.dart';
 import 'package:intl/intl.dart';
+import 'account_history_screen.dart';
 import 'add_transaction_screen.dart';
+import 'customers_screen.dart';
+import 'harvests_screen.dart';
+import 'partners_screen.dart';
+import 'report_screen.dart';
 import 'transaction_log_screen.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/app_ui.dart';
+
+/// The current calendar month as a range, for deep-linking the "This
+/// month" dashboard rows into Reports pre-filtered to the same period.
+DateTimeRange _thisMonthRange() {
+  final now = DateTime.now();
+  final start = DateTime(now.year, now.month, 1);
+  final end = DateTime(now.year, now.month + 1, 0);
+  return DateTimeRange(start: start, end: end);
+}
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -37,6 +51,8 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
   double _monthAdvancesGiven = 0;
   double _monthRevenue = 0;
   double _monthHarvestValue = 0;
+  String? _pettyCashId;
+  String? _revenueAccountId;
 
   @override
   void initState() {
@@ -216,6 +232,8 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
         _monthAdvancesGiven = monthAdvances;
         _monthRevenue = monthRevenue;
         _monthHarvestValue = monthHarvestValue;
+        _pettyCashId = pettyCashAccount['id'] as String;
+        _revenueAccountId = revenueAccount['id'] as String;
         _loading = false;
       });
     } catch (e) {
@@ -289,6 +307,11 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                           label: 'Owed by partners',
                           value: _formatCurrency(_outstandingLoans),
                           color: AppColors.loan,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const PartnersScreen(),
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -298,6 +321,13 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                           label: 'Owed by staff',
                           value: _formatCurrency(_outstandingAdvances),
                           color: AppColors.advance,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const ReportScreen(
+                                initialAccount: 'Advances',
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -311,6 +341,11 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                           label: 'Owed by customers',
                           value: _formatCurrency(_owedByCustomers),
                           color: AppColors.brandGreenLight,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const CustomersScreen(),
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -320,6 +355,14 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                           label: 'This month\'s expenses',
                           value: _formatCurrency(_monthExpenses),
                           color: AppColors.brandNavy,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => ReportScreen(
+                                initialAccount: 'Expenses',
+                                initialDateRange: _thisMonthRange(),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -350,6 +393,14 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                           'Expenses',
                           _monthBills,
                           AppColors.expense,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => ReportScreen(
+                                initialAccount: 'Expenses',
+                                initialDateRange: _thisMonthRange(),
+                              ),
+                            ),
+                          ),
                         ),
                         const Divider(height: 1),
                         _monthRow(
@@ -357,6 +408,14 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                           'Payroll',
                           _monthPayroll,
                           AppColors.payroll,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => ReportScreen(
+                                initialAccount: 'Payroll',
+                                initialDateRange: _thisMonthRange(),
+                              ),
+                            ),
+                          ),
                         ),
                         const Divider(height: 1),
                         _monthRow(
@@ -364,6 +423,14 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                           'Advances',
                           _monthAdvancesGiven,
                           AppColors.advance,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => ReportScreen(
+                                initialAccount: 'Advances',
+                                initialDateRange: _thisMonthRange(),
+                              ),
+                            ),
+                          ),
                         ),
                         const Divider(height: 1),
                         _monthRow(
@@ -371,6 +438,16 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                           'Revenue',
                           _monthRevenue,
                           AppColors.cashIn,
+                          onTap: _revenueAccountId == null
+                              ? null
+                              : () => Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => AccountHistoryScreen(
+                                      accountId: _revenueAccountId!,
+                                      accountName: 'Revenue',
+                                    ),
+                                  ),
+                                ),
                         ),
                         const Divider(height: 1),
                         _monthRow(
@@ -378,6 +455,11 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                           'Harvest',
                           _monthHarvestValue,
                           AppColors.brandGreenLight,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const HarvestsScreen(),
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -488,99 +570,120 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
-        child: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [AppColors.brandGreenLight, AppColors.brandGreenDeep],
-            ),
-          ),
-          child: Stack(
-            children: [
-              // Soft decorative rings, clipped by the card's rounded corners.
-              Positioned(
-                top: -46,
-                right: -28,
-                child: Container(
-                  width: 150,
-                  height: 150,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withValues(alpha: 0.07),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: _pettyCashId == null
+                ? null
+                : () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => AccountHistoryScreen(
+                        accountId: _pettyCashId!,
+                        accountName: 'Petty Cash',
+                      ),
+                    ),
                   ),
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppColors.brandGreenLight, AppColors.brandGreenDeep],
                 ),
               ),
-              Positioned(
-                bottom: -62,
-                right: 40,
-                child: Container(
-                  width: 120,
-                  height: 120,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withValues(alpha: 0.05),
+              child: Stack(
+                children: [
+                  // Soft decorative rings, clipped by the card's rounded corners.
+                  Positioned(
+                    top: -46,
+                    right: -28,
+                    child: Container(
+                      width: 150,
+                      height: 150,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withValues(alpha: 0.07),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+                  Positioned(
+                    bottom: -62,
+                    right: 40,
+                    child: Container(
+                      width: 120,
+                      height: 120,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withValues(alpha: 0.05),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          width: 34,
-                          height: 34,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.18),
-                            borderRadius: BorderRadius.circular(11),
-                          ),
-                          child: const Icon(
-                            Icons.account_balance_wallet_outlined,
-                            size: 17,
-                            color: Colors.white,
-                          ),
+                        Row(
+                          children: [
+                            Container(
+                              width: 34,
+                              height: 34,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.18),
+                                borderRadius: BorderRadius.circular(11),
+                              ),
+                              child: const Icon(
+                                Icons.account_balance_wallet_outlined,
+                                size: 17,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              'Cash on hand',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.2,
+                                color: Colors.white.withValues(alpha: 0.88),
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 10),
-                        Text(
-                          'Cash on hand',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.2,
-                            color: Colors.white.withValues(alpha: 0.88),
+                        const SizedBox(height: 16),
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            _formatCurrency(_cashOnHand),
+                            style: const TextStyle(
+                              fontSize: 36,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: -1.0,
+                            ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        _formatCurrency(_cashOnHand),
-                        style: const TextStyle(
-                          fontSize: 36,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          letterSpacing: -1.0,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _monthRow(IconData icon, String label, double value, Color color) {
-    return Padding(
+  Widget _monthRow(
+    IconData icon,
+    String label,
+    double value,
+    Color color, {
+    VoidCallback? onTap,
+  }) {
+    final row = Padding(
       padding: const EdgeInsets.symmetric(vertical: 11),
       child: Row(
         children: [
@@ -604,8 +707,19 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
               color: AppColors.ink,
             ),
           ),
+          if (onTap != null) ...[
+            const SizedBox(width: 6),
+            const Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: AppColors.inkMuted,
+            ),
+          ],
         ],
       ),
     );
+
+    if (onTap == null) return row;
+    return InkWell(onTap: onTap, child: row);
   }
 }
