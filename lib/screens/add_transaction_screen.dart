@@ -18,8 +18,9 @@ class AddTransactionScreen extends StatefulWidget {
 }
 
 class _LineItem {
-  _LineItem({this.pendingCategoryName, String amount = ''})
-      : amountController = TextEditingController(text: amount);
+  _LineItem({this.pendingCategoryName, String amount = '', String note = ''})
+    : amountController = TextEditingController(text: amount),
+      noteController = TextEditingController(text: note);
 
   /// The invoice's category id, selected from `expense_categories`.
   String? categoryId;
@@ -29,6 +30,7 @@ class _LineItem {
   String? pendingCategoryName;
 
   final TextEditingController amountController;
+  final TextEditingController noteController;
 }
 
 class _AddTransactionScreenState extends State<AddTransactionScreen> {
@@ -68,14 +70,18 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
 
   /// The type actually saved to the database - 'loan' flips to
   /// 'loan_repayment' when the repayment toggle is on.
-  String get _effectiveType =>
-      (_selectedType == 'loan' && _isRepayment) ? 'loan_repayment' : _selectedType;
+  String get _effectiveType => (_selectedType == 'loan' && _isRepayment)
+      ? 'loan_repayment'
+      : _selectedType;
 
   double get _totalAmount => double.tryParse(_totalController.text) ?? 0;
-  double get _allocatedAmount =>
-      _items.fold(0, (sum, item) => sum + (double.tryParse(item.amountController.text) ?? 0));
+  double get _allocatedAmount => _items.fold(
+    0,
+    (sum, item) => sum + (double.tryParse(item.amountController.text) ?? 0),
+  );
 
-  bool get _allocationMatches => (_allocatedAmount - _totalAmount).abs() < 0.01 && _totalAmount > 0;
+  bool get _allocationMatches =>
+      (_allocatedAmount - _totalAmount).abs() < 0.01 && _totalAmount > 0;
 
   @override
   void initState() {
@@ -87,7 +93,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     if (existing != null) {
       _selectedType = existing['type'] as String;
       _selectedDate = DateTime.parse(existing['transaction_date'] as String);
-      _totalController.text = (existing['amount'] as num).toDouble().toStringAsFixed(2);
+      _totalController.text = (existing['amount'] as num)
+          .toDouble()
+          .toStringAsFixed(2);
       _noteController.text = existing['note'] as String? ?? '';
       _selectedPartnerId = existing['related_partner_id'] as String?;
       _selectedStaffId = existing['related_staff_id'] as String?;
@@ -99,12 +107,16 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         _splitEnabled = true;
         for (final item in _items) {
           item.amountController.dispose();
+          item.noteController.dispose();
         }
         _items = items
-            .map((i) => _LineItem(
-                  pendingCategoryName: i['category'] as String?,
-                  amount: (i['amount'] as num).toDouble().toStringAsFixed(2),
-                ))
+            .map(
+              (i) => _LineItem(
+                pendingCategoryName: i['category'] as String?,
+                amount: (i['amount'] as num).toDouble().toStringAsFixed(2),
+                note: i['note'] as String? ?? '',
+              ),
+            )
             .toList();
       } else if (items.isNotEmpty) {
         _pendingCategoryName = items.first['category'] as String?;
@@ -118,6 +130,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     _noteController.dispose();
     for (final item in _items) {
       item.amountController.dispose();
+      item.noteController.dispose();
     }
     super.dispose();
   }
@@ -161,9 +174,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   }
 
   Future<void> _openManageCategories() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const ExpenseCategoriesScreen()),
-    );
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const ExpenseCategoriesScreen()));
     _loadCategories();
   }
 
@@ -200,10 +213,14 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       return;
     }
     if (_splitEnabled && (_allocatedAmount - _totalAmount).abs() > 0.01) {
-      setState(() => _errorMessage = 'Invoice amounts must add up to the total.');
+      setState(
+        () => _errorMessage = 'Invoice amounts must add up to the total.',
+      );
       return;
     }
-    if (_selectedType == 'expense' && !_splitEnabled && _selectedCategoryId == null) {
+    if (_selectedType == 'expense' &&
+        !_splitEnabled &&
+        _selectedCategoryId == null) {
       setState(() => _errorMessage = 'Select a category.');
       return;
     }
@@ -215,24 +232,33 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     setState(() => _saving = true);
 
     try {
-      final txnResponse = await supabase.from('transactions').insert({
-        'type': _effectiveType,
-        'amount': _totalAmount,
-        'transaction_date': _dbDateFormat.format(_selectedDate),
-        'related_partner_id': _needsPartner ? _selectedPartnerId : null,
-        'related_staff_id': _needsStaff ? _selectedStaffId : null,
-        'note': _noteController.text.trim(),
-      }).select().single();
+      final txnResponse = await supabase
+          .from('transactions')
+          .insert({
+            'type': _effectiveType,
+            'amount': _totalAmount,
+            'transaction_date': _dbDateFormat.format(_selectedDate),
+            'related_partner_id': _needsPartner ? _selectedPartnerId : null,
+            'related_staff_id': _needsStaff ? _selectedStaffId : null,
+            'note': _noteController.text.trim(),
+          })
+          .select()
+          .single();
 
       final transactionId = txnResponse['id'];
 
       if (_splitEnabled) {
         final itemRows = _items
-            .map((item) => {
-                  'transaction_id': transactionId,
-                  'category': _categoryName(item.categoryId),
-                  'amount': double.tryParse(item.amountController.text) ?? 0,
-                })
+            .map(
+              (item) => {
+                'transaction_id': transactionId,
+                'category': _categoryName(item.categoryId),
+                'amount': double.tryParse(item.amountController.text) ?? 0,
+                'note': item.noteController.text.trim().isEmpty
+                    ? null
+                    : item.noteController.text.trim(),
+              },
+            )
             .toList();
         await supabase.from('transaction_items').insert(itemRows);
       } else {
@@ -265,6 +291,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   void _removeItem(int index) {
     final item = _items.removeAt(index);
     item.amountController.dispose();
+    item.noteController.dispose();
     setState(() {});
   }
 
@@ -353,10 +380,12 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               value: _selectedPartnerId,
               hint: 'Select partner',
               items: _partners
-                  .map((p) => DropdownMenuItem<String>(
-                        value: p['id'] as String,
-                        child: Text(p['name'] as String),
-                      ))
+                  .map(
+                    (p) => DropdownMenuItem<String>(
+                      value: p['id'] as String,
+                      child: Text(p['name'] as String),
+                    ),
+                  )
                   .toList(),
               onChanged: (value) => setState(() => _selectedPartnerId = value),
             ),
@@ -372,10 +401,12 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               value: _selectedStaffId,
               hint: 'Select staff member',
               items: _staff
-                  .map((s) => DropdownMenuItem<String>(
-                        value: s['id'] as String,
-                        child: Text(s['name'] as String),
-                      ))
+                  .map(
+                    (s) => DropdownMenuItem<String>(
+                      value: s['id'] as String,
+                      child: Text(s['name'] as String),
+                    ),
+                  )
                   .toList(),
               onChanged: (value) => setState(() => _selectedStaffId = value),
             ),
@@ -385,20 +416,19 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
           if (_selectedType == 'expense' && !_splitEnabled) ...[
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _sectionLabel('Category'),
-                _manageCategoriesLink(),
-              ],
+              children: [_sectionLabel('Category'), _manageCategoriesLink()],
             ),
             const SizedBox(height: 6),
             _dropdownField<String>(
               value: _selectedCategoryId,
               hint: 'Select category',
               items: _categories
-                  .map((c) => DropdownMenuItem<String>(
-                        value: c['id'] as String,
-                        child: Text(c['name'] as String),
-                      ))
+                  .map(
+                    (c) => DropdownMenuItem<String>(
+                      value: c['id'] as String,
+                      child: Text(c['name'] as String),
+                    ),
+                  )
                   .toList(),
               onChanged: (value) => setState(() => _selectedCategoryId = value),
             ),
@@ -413,16 +443,17 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
             decoration: _fieldDecoration(hint: '\$0.00', large: true).copyWith(
               prefixText: '\$ ',
-              prefixStyle: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: Colors.black),
+              prefixStyle: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                color: Colors.black,
+              ),
             ),
             onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 20),
 
-          if (_supportsSplit) ...[
-            _splitToggle(),
-            const SizedBox(height: 16),
-          ],
+          if (_supportsSplit) ...[_splitToggle(), const SizedBox(height: 16)],
 
           if (_splitEnabled) ...[
             Padding(
@@ -432,9 +463,21 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                 children: [
                   Row(
                     children: [
-                      Text('Category', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                      Text(
+                        'Category',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade500,
+                        ),
+                      ),
                       const SizedBox(width: 130),
-                      Text('Amount', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                      Text(
+                        'Amount',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade500,
+                        ),
+                      ),
                     ],
                   ),
                   _manageCategoriesLink(),
@@ -453,10 +496,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             _addCategoryButton(),
             const SizedBox(height: 14),
             Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 12,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
                 color: (_allocationMatches ? _allocatedOk : Colors.orange)
                     .withValues(alpha: 0.09),
@@ -710,9 +750,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       decoration: BoxDecoration(
         color: color.withValues(alpha: value ? 0.11 : 0.05),
         borderRadius: BorderRadius.circular(AppStyles.radiusField),
-        border: Border.all(
-          color: color.withValues(alpha: value ? 0.35 : 0.14),
-        ),
+        border: Border.all(color: color.withValues(alpha: value ? 0.35 : 0.14)),
       ),
       child: Row(
         children: [
@@ -773,83 +811,121 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         borderRadius: BorderRadius.circular(AppStyles.radiusField),
         border: Border.all(color: AppColors.hairline),
       ),
-      child: Row(
+      child: Column(
         children: [
-          IconBadge(
-            icon: _iconForCategory(categoryName),
-            color: color,
-            size: 32,
-            iconSize: 16,
+          Row(
+            children: [
+              IconBadge(
+                icon: _iconForCategory(categoryName),
+                color: color,
+                size: 32,
+                iconSize: 16,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 3,
+                child: DropdownButtonFormField<String>(
+                  initialValue: item.categoryId,
+                  isExpanded: true,
+                  items: _categories
+                      .map(
+                        (c) => DropdownMenuItem<String>(
+                          value: c['id'] as String,
+                          child: Text(
+                            c['name'] as String,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) => setState(() => item.categoryId = value),
+                  decoration: const InputDecoration(
+                    hintText: 'Category',
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    filled: false,
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  hint: const Text(
+                    'Category',
+                    style: TextStyle(color: AppColors.inkMuted, fontSize: 15),
+                  ),
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.ink,
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: TextField(
+                  controller: item.amountController,
+                  textAlign: TextAlign.right,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    hintText: '\$0.00',
+                    prefixText: '\$ ',
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    filled: false,
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.ink,
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 17),
+                color: AppColors.inkMuted,
+                visualDensity: VisualDensity.compact,
+                onPressed: _items.length > 1 ? () => _removeItem(index) : null,
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            flex: 3,
-            child: DropdownButtonFormField<String>(
-              initialValue: item.categoryId,
-              isExpanded: true,
-              items: _categories
-                  .map(
-                    (c) => DropdownMenuItem<String>(
-                      value: c['id'] as String,
-                      child: Text(
-                        c['name'] as String,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+          Divider(height: 1, color: AppColors.hairline),
+          Row(
+            children: [
+              const SizedBox(width: 40),
+              const Icon(
+                Icons.notes_outlined,
+                size: 15,
+                color: AppColors.inkMuted,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: TextField(
+                  controller: item.noteController,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.inkSecondary,
+                  ),
+                  decoration: const InputDecoration(
+                    hintText: 'Note for this invoice (optional)',
+                    hintStyle: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.inkMuted,
                     ),
-                  )
-                  .toList(),
-              onChanged: (value) => setState(() => item.categoryId = value),
-              decoration: const InputDecoration(
-                hintText: 'Category',
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                filled: false,
-                isDense: true,
-                contentPadding: EdgeInsets.symmetric(vertical: 12),
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    filled: false,
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(vertical: 9),
+                  ),
+                ),
               ),
-              hint: const Text(
-                'Category',
-                style: TextStyle(color: AppColors.inkMuted, fontSize: 15),
-              ),
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: AppColors.ink,
-              ),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: TextField(
-              controller: item.amountController,
-              textAlign: TextAlign.right,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: const InputDecoration(
-                hintText: '\$0.00',
-                prefixText: '\$ ',
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                filled: false,
-                isDense: true,
-                contentPadding: EdgeInsets.symmetric(vertical: 12),
-              ),
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-                color: AppColors.ink,
-              ),
-              onChanged: (_) => setState(() {}),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close, size: 17),
-            color: AppColors.inkMuted,
-            visualDensity: VisualDensity.compact,
-            onPressed: _items.length > 1 ? () => _removeItem(index) : null,
+            ],
           ),
         ],
       ),
@@ -907,10 +983,9 @@ class _DashedBorderPainter extends CustomPainter {
       ..style = PaintingStyle.stroke;
 
     final path = Path()
-      ..addRRect(RRect.fromRectAndRadius(
-        Offset.zero & size,
-        Radius.circular(radius),
-      ));
+      ..addRRect(
+        RRect.fromRectAndRadius(Offset.zero & size, Radius.circular(radius)),
+      );
 
     const dashWidth = 5.0;
     const dashSpace = 4.0;
@@ -918,7 +993,10 @@ class _DashedBorderPainter extends CustomPainter {
       double distance = 0;
       while (distance < metric.length) {
         final next = distance + dashWidth;
-        canvas.drawPath(metric.extractPath(distance, next.clamp(0, metric.length)), paint);
+        canvas.drawPath(
+          metric.extractPath(distance, next.clamp(0, metric.length)),
+          paint,
+        );
         distance = next + dashSpace;
       }
     }

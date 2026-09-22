@@ -380,19 +380,24 @@ fuel + $3 water + $3 food"). Only the `expense` type supports this. It's
 modeled as:
 - One `transactions` row with the total amount.
 - Multiple `transaction_items` rows underneath, each with a category
-  (selected from `expense_categories`) and amount, which must sum to the
-  parent transaction's `amount`.
+  (selected from `expense_categories`), amount, and an optional
+  per-invoice note, which must sum (amounts, not notes) to the parent
+  transaction's `amount`.
 
 The "Add transaction" screen has a "Multiple invoices" toggle (only shown
 when type = `expense`). When off, a single "Category" dropdown is shown
-and the one implicit item takes that category. When on, each invoice row
-has its own category dropdown + amount field, and the UI shows an
-"Allocated: $X of $Y" indicator that turns green only when the line items
-sum matches the total — this is the validation mechanism, enforced in the
-Flutter form before saving (not in SQL). Categories are always chosen from
-the managed `expense_categories` list, never typed freely — new
-categories are added via the "Manage categories" screen (reachable from
-the category dropdown's "Manage categories" link).
+and the one implicit item takes that category (its `transaction_items`
+row has no note — only split invoices get a per-row note field). When
+on, each invoice row has its own category dropdown, amount field, and a
+one-line "Note for this invoice" field underneath (`_LineItem.
+noteController` in add_transaction_screen.dart, saved to that item's
+`transaction_items.note`), and the UI shows an "Allocated: $X of $Y"
+indicator that turns green only when the line items' amounts sum to the
+total — this is the validation mechanism, enforced in the Flutter form
+before saving (not in SQL). Categories are always chosen from the
+managed `expense_categories` list, never typed freely — new categories
+are added via the "Manage categories" screen (reachable from the
+category dropdown's "Manage categories" link).
 
 **Editing:** single-invoice transactions are edited in place via a bottom
 sheet (date, note, amount). Multi-invoice transactions are edited by
