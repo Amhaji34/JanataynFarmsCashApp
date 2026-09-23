@@ -809,7 +809,25 @@ lib/
 │   │                                 sum(loan.amount) -
 │   │                                 sum(loan_repayment.amount) for that
 │   │                                 partner), plus an add-new form.
-│   │                                 Reached from the drawer.
+│   │                                 Tapping a partner opens
+│   │                                 partner_detail_screen.dart. Reached
+│   │                                 from the drawer.
+│   ├── partner_detail_screen.dart — one partner's outstanding loan
+│   │                                 balance plus their merged history:
+│   │                                 "Loan given" (increases what they
+│   │                                 owe) and "Repayment" (reduces it),
+│   │                                 sorted newest first — same
+│   │                                 merge-and-sort-by-date shape as
+│   │                                 staff_detail_screen.dart /
+│   │                                 customer_detail_screen.dart. Each
+│   │                                 entry's label appends the
+│   │                                 transaction's own note when present.
+│   │                                 Read-only — no add/edit flow here;
+│   │                                 loans and repayments are still
+│   │                                 recorded via
+│   │                                 add_transaction_screen.dart's loan
+│   │                                 type and its "This is a repayment"
+│   │                                 toggle.
 │   ├── settings_screen.dart       — the "Accounts" section: the 4
 │   │                                 funding-account balances as tappable
 │   │                                 cards (→ AccountHistoryScreen) plus
@@ -927,8 +945,11 @@ lib/
 │   │                                 fee-adjusted (`kg_sold * price_per_kg
 │   │                                 - transport_fee`), not `harvests`,
 │   │                                 since a harvest alone has no price).
-│   │                                 Each row shows kg harvested/sold and
-│   │                                 either "Fully sold" or "`X` kg left";
+│   │                                 Each row shows kg harvested/sold,
+│   │                                 either "Fully sold" or "`X` kg left",
+│   │                                 and — when that harvest has any sales
+│   │                                 — a `DualCurrencyStat` of its own
+│   │                                 fee-adjusted sale value underneath;
 │   │                                 tapping one opens
 │   │                                 harvest_detail_screen.dart. FAB to
 │   │                                 add a harvest, admin only. Read-only

@@ -3,6 +3,7 @@ import '../main.dart';
 import '../theme/app_theme.dart';
 import '../utils/currency.dart';
 import '../widgets/app_ui.dart';
+import 'partner_detail_screen.dart';
 
 class PartnersScreen extends StatefulWidget {
   const PartnersScreen({super.key});
@@ -77,6 +78,18 @@ class _PartnersScreenState extends State<PartnersScreen> {
         _loading = false;
       });
     }
+  }
+
+  Future<void> _openPartner(Map<String, dynamic> partner) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PartnerDetailScreen(
+          partnerId: partner['id'] as String,
+          partnerName: partner['name'] as String,
+        ),
+      ),
+    );
+    _loadPartners();
   }
 
   Future<void> _addPartner() async {
@@ -201,6 +214,7 @@ class _PartnersScreenState extends State<PartnersScreen> {
                             horizontal: 14,
                             vertical: 12,
                           ),
+                          onTap: () => _openPartner(partner),
                           child: Row(
                             children: [
                               InitialsAvatar(name: name),

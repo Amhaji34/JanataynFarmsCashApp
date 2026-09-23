@@ -27,6 +27,9 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
 
   /// harvestId -> total kg sold across all sales against it.
   Map<String, double> _soldByHarvest = {};
+
+  /// harvestId -> total fee-adjusted sale value, per currency.
+  Map<String, Map<AppCurrency, double>> _valueByHarvest = {};
   Map<AppCurrency, double> _totalValueByCurrency = {};
   Map<AppCurrency, double> _paidTotals = {};
   String? _role;
@@ -64,6 +67,7 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
       final sales = List<Map<String, dynamic>>.from(salesData);
 
       final soldByHarvest = <String, double>{};
+      final valueByHarvest = <String, Map<AppCurrency, double>>{};
       final totalValue = {for (final c in AppCurrency.values) c: 0.0};
       for (final s in sales) {
         final harvestId = s['harvest_id'] as String;
@@ -71,10 +75,13 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
         soldByHarvest[harvestId] = (soldByHarvest[harvestId] ?? 0) + kg;
         final currency = AppCurrency.fromCode(s['currency'] as String?);
         final transportFee = (s['transport_fee'] as num? ?? 0).toDouble();
-        totalValue[currency] =
-            (totalValue[currency] ?? 0) +
-            kg * (s['price_per_kg'] as num).toDouble() -
-            transportFee;
+        final value = kg * (s['price_per_kg'] as num).toDouble() - transportFee;
+        totalValue[currency] = (totalValue[currency] ?? 0) + value;
+        final harvestValues =
+            valueByHarvest[harvestId] ??
+            {for (final c in AppCurrency.values) c: 0.0};
+        harvestValues[currency] = (harvestValues[currency] ?? 0) + value;
+        valueByHarvest[harvestId] = harvestValues;
       }
 
       final paymentsData = await supabase
@@ -90,6 +97,7 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
       setState(() {
         _harvests = List<Map<String, dynamic>>.from(harvestsData);
         _soldByHarvest = soldByHarvest;
+        _valueByHarvest = valueByHarvest;
         _totalValueByCurrency = totalValue;
         _paidTotals = paidTotals;
         _loading = false;
@@ -276,6 +284,10 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                       final remaining = (kg - sold).clamp(0, double.infinity);
                       final fullySold = remaining <= 0.01;
                       final date = DateTime.parse(h['harvest_date'] as String);
+                      final value =
+                          _valueByHarvest[h['id']] ??
+                          {for (final c in AppCurrency.values) c: 0.0};
+                      final hasValue = value.values.any((v) => v > 0.001);
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 10),
                         child: AppCard(
@@ -317,17 +329,35 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                                   ],
                                 ),
                               ),
-                              Text(
-                                fullySold
-                                    ? 'Fully sold'
-                                    : '${remaining.toStringAsFixed(1)} kg left',
-                                style: TextStyle(
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: fullySold
-                                      ? AppColors.inkMuted
-                                      : AppColors.cashIn,
-                                ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    fullySold
+                                        ? 'Fully sold'
+                                        : '${remaining.toStringAsFixed(1)} kg left',
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: fullySold
+                                          ? AppColors.inkMuted
+                                          : AppColors.cashIn,
+                                    ),
+                                  ),
+                                  if (hasValue) ...[
+                                    const SizedBox(height: 3),
+                                    DualCurrencyStat(
+                                      amounts: value,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.end,
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.brandGreenDeep,
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
                             ],
                           ),
