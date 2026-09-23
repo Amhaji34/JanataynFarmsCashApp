@@ -13,12 +13,14 @@ class HarvestDetailScreen extends StatefulWidget {
   const HarvestDetailScreen({
     super.key,
     required this.harvestId,
+    required this.harvestNumber,
     required this.harvestDate,
     required this.kgHarvested,
     this.note,
   });
 
   final String harvestId;
+  final int harvestNumber;
   final DateTime harvestDate;
   final double kgHarvested;
   final String? note;
@@ -92,7 +94,9 @@ class _HarvestDetailScreenState extends State<HarvestDetailScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Harvest — ${_dateFormat.format(widget.harvestDate)}'),
+        title: Text(
+          '#H${widget.harvestNumber} · ${_dateFormat.format(widget.harvestDate)}',
+        ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -224,7 +228,12 @@ class _HarvestDetailScreenState extends State<HarvestDetailScreen> {
                     ..._sales.map((s) {
                       final kg = (s['kg_sold'] as num).toDouble();
                       final pricePerKg = (s['price_per_kg'] as num).toDouble();
-                      final total = kg * pricePerKg;
+                      final transportFee = (s['transport_fee'] as num? ?? 0)
+                          .toDouble();
+                      final owed = (kg * pricePerKg - transportFee).clamp(
+                        0.0,
+                        double.infinity,
+                      );
                       final currency = AppCurrency.fromCode(
                         s['currency'] as String?,
                       );
@@ -259,7 +268,10 @@ class _HarvestDetailScreenState extends State<HarvestDetailScreen> {
                                     ),
                                     const SizedBox(height: 3),
                                     Text(
-                                      '${kg.toStringAsFixed(1)} kg @ ${formatMoney(pricePerKg, currency)}/kg',
+                                      transportFee > 0
+                                          ? '${kg.toStringAsFixed(1)} kg @ ${formatMoney(pricePerKg, currency)}/kg '
+                                                '(−${formatMoney(transportFee, currency)} transport)'
+                                          : '${kg.toStringAsFixed(1)} kg @ ${formatMoney(pricePerKg, currency)}/kg',
                                       style: const TextStyle(
                                         fontSize: 12,
                                         color: AppColors.inkMuted,
@@ -277,7 +289,7 @@ class _HarvestDetailScreenState extends State<HarvestDetailScreen> {
                                 ),
                               ),
                               Text(
-                                formatMoney(total, currency),
+                                formatMoney(owed, currency),
                                 style: const TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w700,

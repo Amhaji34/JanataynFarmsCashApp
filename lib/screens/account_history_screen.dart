@@ -13,6 +13,7 @@ class _Entry {
     required this.date,
     required this.createdAt,
     required this.label,
+    this.note,
     required this.amount,
     required this.currency,
     required this.isPositive,
@@ -24,6 +25,7 @@ class _Entry {
   final DateTime date;
   final DateTime createdAt;
   final String label;
+  final String? note;
   final double amount;
   final AppCurrency currency;
   final bool isPositive;
@@ -163,6 +165,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                 date: date,
                 createdAt: createdAt,
                 label: 'Funds added',
+                note: t['note'] as String?,
                 amount: amount,
                 currency: currency,
                 isPositive: true,
@@ -178,6 +181,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                 date: date,
                 createdAt: createdAt,
                 label: 'Transferred to ${relatedName ?? 'Petty Cash'}',
+                note: t['note'] as String?,
                 amount: amount,
                 currency: currency,
                 isPositive: false,
@@ -193,6 +197,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                 date: date,
                 createdAt: createdAt,
                 label: 'Transfer from ${relatedName ?? 'another account'}',
+                note: t['note'] as String?,
                 amount: amount,
                 currency: currency,
                 isPositive: true,
@@ -208,6 +213,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                 date: date,
                 createdAt: createdAt,
                 label: 'Exchanged to ${_otherCurrency(currency).code}',
+                note: t['note'] as String?,
                 amount: amount,
                 currency: currency,
                 isPositive: false,
@@ -223,6 +229,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                 date: date,
                 createdAt: createdAt,
                 label: 'Exchanged from ${_otherCurrency(currency).code}',
+                note: t['note'] as String?,
                 amount: amount,
                 currency: currency,
                 isPositive: true,
@@ -260,6 +267,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                   date: date,
                   createdAt: createdAt,
                   label: 'Expense',
+                  note: t['note'] as String?,
                   amount: amount,
                   currency: currency,
                   isPositive: false,
@@ -275,6 +283,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                   date: date,
                   createdAt: createdAt,
                   label: 'Payroll',
+                  note: t['note'] as String?,
                   amount: amount,
                   currency: currency,
                   isPositive: false,
@@ -290,6 +299,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                   date: date,
                   createdAt: createdAt,
                   label: 'Loan given',
+                  note: t['note'] as String?,
                   amount: amount,
                   currency: currency,
                   isPositive: false,
@@ -305,6 +315,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                   date: date,
                   createdAt: createdAt,
                   label: 'Advance given',
+                  note: t['note'] as String?,
                   amount: amount,
                   currency: currency,
                   isPositive: false,
@@ -320,6 +331,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                   date: date,
                   createdAt: createdAt,
                   label: 'Loan repayment received',
+                  note: t['note'] as String?,
                   amount: amount,
                   currency: currency,
                   isPositive: true,
@@ -530,6 +542,17 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                                         color: AppColors.ink,
                                       ),
                                     ),
+                                    if (e.note != null &&
+                                        e.note!.isNotEmpty) ...[
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        e.note!,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.inkSecondary,
+                                        ),
+                                      ),
+                                    ],
                                     const SizedBox(height: 3),
                                     Text(
                                       _dateFormat.format(e.date),

@@ -60,7 +60,7 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
 
       final salesData = await supabase
           .from('harvest_sales')
-          .select('harvest_id, kg_sold, price_per_kg, currency');
+          .select('harvest_id, kg_sold, price_per_kg, transport_fee, currency');
       final sales = List<Map<String, dynamic>>.from(salesData);
 
       final soldByHarvest = <String, double>{};
@@ -70,9 +70,11 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
         final kg = (s['kg_sold'] as num).toDouble();
         soldByHarvest[harvestId] = (soldByHarvest[harvestId] ?? 0) + kg;
         final currency = AppCurrency.fromCode(s['currency'] as String?);
+        final transportFee = (s['transport_fee'] as num? ?? 0).toDouble();
         totalValue[currency] =
             (totalValue[currency] ?? 0) +
-            kg * (s['price_per_kg'] as num).toDouble();
+            kg * (s['price_per_kg'] as num).toDouble() -
+            transportFee;
       }
 
       final paymentsData = await supabase
@@ -122,6 +124,7 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
       MaterialPageRoute(
         builder: (_) => HarvestDetailScreen(
           harvestId: h['id'] as String,
+          harvestNumber: h['harvest_number'] as int,
           harvestDate: DateTime.parse(h['harvest_date'] as String),
           kgHarvested: (h['kg_harvested'] as num).toDouble(),
           note: h['note'] as String?,
@@ -295,7 +298,7 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      _dateFormat.format(date),
+                                      '#H${h['harvest_number']} · ${_dateFormat.format(date)}',
                                       style: const TextStyle(
                                         fontSize: 14.5,
                                         fontWeight: FontWeight.w600,

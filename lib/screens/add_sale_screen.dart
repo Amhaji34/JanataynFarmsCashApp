@@ -8,11 +8,13 @@ import '../widgets/app_ui.dart';
 import 'customers_screen.dart';
 
 /// Records a sale of part (or all) of a harvest's remaining stock to one
-/// customer, with an optional upfront payment (often $0 - the rest
-/// becomes their outstanding balance, tracked on the Customers screen).
-/// A single harvest can have many of these, to the same or different
-/// customers, on different dates - see harvest_detail_screen.dart. Any
-/// upfront amount feeds Revenue via services/customer_payments.dart.
+/// customer, with an optional transportation fee (subtracted from what
+/// the customer owes) and an optional upfront payment (often $0 - the
+/// rest becomes their outstanding balance, tracked on the Customers
+/// screen). A single harvest can have many of these, to the same or
+/// different customers, on different dates - see
+/// harvest_detail_screen.dart. Any upfront amount feeds Revenue via
+/// services/customer_payments.dart.
 class AddSaleScreen extends StatefulWidget {
   const AddSaleScreen({super.key, this.preselectedHarvestId});
 
@@ -29,6 +31,9 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   String? _loadError;
   List<Map<String, dynamic>> _harvests = [];
   Map<String, double> _remainingByHarvest = {};
+
+  /// harvestId -> its display code, e.g. "#H3".
+  Map<String, String> _codeByHarvest = {};
   List<Map<String, dynamic>> _customers = [];
 
   String? _selectedHarvestId;
@@ -36,6 +41,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
 
   final _kgController = TextEditingController();
   final _priceController = TextEditingController();
+  final _transportFeeController = TextEditingController(text: '0.00');
   final _upfrontController = TextEditingController(text: '0.00');
   final _noteController = TextEditingController();
   DateTime _selectedDate = DateTime.now();
@@ -49,6 +55,10 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   double get _kg => double.tryParse(_kgController.text) ?? 0;
   double get _pricePerKg => double.tryParse(_priceController.text) ?? 0;
   double get _totalValue => _kg * _pricePerKg;
+  double get _transportFee =>
+      double.tryParse(_transportFeeController.text) ?? 0;
+  double get _customerOwes =>
+      (_totalValue - _transportFee).clamp(0, double.infinity);
   double get _upfront => double.tryParse(_upfrontController.text) ?? 0;
   double get _remaining => _remainingByHarvest[_selectedHarvestId] ?? 0;
 
@@ -58,6 +68,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     _load();
     _kgController.addListener(() => setState(() {}));
     _priceController.addListener(() => setState(() {}));
+    _transportFeeController.addListener(() => setState(() {}));
     _upfrontController.addListener(() => setState(() {}));
   }
 
@@ -65,6 +76,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   void dispose() {
     _kgController.dispose();
     _priceController.dispose();
+    _transportFeeController.dispose();
     _upfrontController.dispose();
     _noteController.dispose();
     super.dispose();
@@ -100,6 +112,9 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
               (h['kg_harvested'] as num).toDouble() -
               (soldByHarvest[h['id']] ?? 0),
       };
+      final codes = {
+        for (final h in harvests) h['id'] as String: '#H${h['harvest_number']}',
+      };
 
       final customersData = await supabase
           .from('customers')
@@ -109,6 +124,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       setState(() {
         _harvests = available;
         _remainingByHarvest = remaining;
+        _codeByHarvest = codes;
         _customers = List<Map<String, dynamic>>.from(customersData);
         _selectedHarvestId =
             widget.preselectedHarvestId != null &&
@@ -172,6 +188,18 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       setState(() => _errorMessage = 'Enter a price per kg.');
       return;
     }
+    if (_transportFee < 0) {
+      setState(() => _errorMessage = 'Transportation fee can\'t be negative.');
+      return;
+    }
+    if (_transportFee > _totalValue + 0.01) {
+      setState(
+        () => _errorMessage =
+            'Transportation fee can\'t exceed the total value '
+            '(${formatMoney(_totalValue, _selectedCurrency)}).',
+      );
+      return;
+    }
     if (_selectedCustomerId == null) {
       setState(() => _errorMessage = 'Select who this was sold to.');
       return;
@@ -180,17 +208,23 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       setState(() => _errorMessage = 'Upfront payment can\'t be negative.');
       return;
     }
-    if (_upfront > _totalValue + 0.01) {
+    if (_upfront > _customerOwes + 0.01) {
       setState(
         () => _errorMessage =
-            'Upfront payment can\'t exceed the total value '
-            '(${formatMoney(_totalValue, _selectedCurrency)}).',
+            'Upfront payment can\'t exceed what the customer owes '
+            '(${formatMoney(_customerOwes, _selectedCurrency)}).',
       );
       return;
     }
 
     setState(() => _saving = true);
     try {
+      final harvestCode = _codeByHarvest[_selectedHarvestId] ?? '';
+      final baseNote = _noteController.text.trim();
+      final saleNote = baseNote.isEmpty
+          ? harvestCode
+          : '$baseNote ($harvestCode)';
+
       final saleResponse = await supabase
           .from('harvest_sales')
           .insert({
@@ -198,9 +232,10 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
             'customer_id': _selectedCustomerId,
             'kg_sold': _kg,
             'price_per_kg': _pricePerKg,
+            'transport_fee': _transportFee,
             'currency': _selectedCurrency.code,
             'sale_date': _dbDateFormat.format(_selectedDate),
-            'note': _noteController.text.trim(),
+            'note': saleNote,
           })
           .select()
           .single();
@@ -212,7 +247,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
           amount: _upfront,
           date: _selectedDate,
           currency: _selectedCurrency,
-          note: 'Upfront payment for harvest sale',
+          note: 'Upfront payment for harvest sale ($harvestCode)',
         );
       }
 
@@ -253,6 +288,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                   final selected = id == _selectedHarvestId;
                   final date = DateTime.parse(h['harvest_date'] as String);
                   final remaining = _remainingByHarvest[id] ?? 0;
+                  final code = _codeByHarvest[id] ?? '';
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: AppCard(
@@ -274,7 +310,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Harvested ${_dateFormat.format(date)}',
+                                  '$code · ${_dateFormat.format(date)}',
                                   style: const TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.w600,
@@ -371,6 +407,29 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                 ),
                 const SizedBox(height: 16),
 
+                const SectionLabel('TRANSPORTATION FEE (OPTIONAL)'),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _transportFeeController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: '${_selectedCurrency.symbol}0',
+                    prefixText: '${_selectedCurrency.symbol} ',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Deducted from what the customer owes for this sale.',
+                  style: TextStyle(fontSize: 12, color: AppColors.inkMuted),
+                ),
+                const SizedBox(height: 16),
+
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(
@@ -389,33 +448,28 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                       color: AppColors.brandGreen.withValues(alpha: 0.22),
                     ),
                   ),
-                  child: Row(
+                  child: Column(
                     children: [
-                      const Icon(
-                        Icons.eco_outlined,
-                        size: 18,
-                        color: AppColors.brandGreen,
-                      ),
-                      const SizedBox(width: 10),
-                      const Expanded(
-                        child: Text(
-                          'Total value',
-                          style: TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.brandGreenDeep,
-                          ),
-                        ),
-                      ),
-                      Text(
+                      _summaryRow(
+                        'Total value',
                         formatMoney(_totalValue, _selectedCurrency),
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.4,
-                          color: AppColors.brandGreenDeep,
-                        ),
                       ),
+                      if (_transportFee > 0) ...[
+                        const SizedBox(height: 6),
+                        _summaryRow(
+                          'Transportation fee',
+                          '− ${formatMoney(_transportFee, _selectedCurrency)}',
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Divider(height: 1),
+                        ),
+                        _summaryRow(
+                          'Customer owes',
+                          formatMoney(_customerOwes, _selectedCurrency),
+                          emphasize: true,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -494,9 +548,9 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  _upfront >= _totalValue && _totalValue > 0
+                  _upfront >= _customerOwes && _customerOwes > 0
                       ? 'Paid in full - nothing added to their balance.'
-                      : 'Remaining ${formatMoney((_totalValue - _upfront).clamp(0, double.infinity), _selectedCurrency)} will be added to their balance.',
+                      : 'Remaining ${formatMoney((_customerOwes - _upfront).clamp(0, double.infinity), _selectedCurrency)} will be added to their balance.',
                   style: const TextStyle(
                     fontSize: 12,
                     color: AppColors.inkMuted,
@@ -585,6 +639,32 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                 ),
               ],
             ),
+    );
+  }
+
+  Widget _summaryRow(String label, String value, {bool emphasize = false}) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: emphasize ? 14 : 13.5,
+              fontWeight: emphasize ? FontWeight.w700 : FontWeight.w600,
+              color: AppColors.brandGreenDeep,
+            ),
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: emphasize ? 18 : 14,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.3,
+            color: AppColors.brandGreenDeep,
+          ),
+        ),
+      ],
     );
   }
 }

@@ -53,7 +53,9 @@ class _CustomersScreenState extends State<CustomersScreen> {
 
       final salesData = await supabase
           .from('harvest_sales')
-          .select('customer_id, kg_sold, price_per_kg, currency');
+          .select(
+            'customer_id, kg_sold, price_per_kg, transport_fee, currency',
+          );
       final sales = List<Map<String, dynamic>>.from(salesData);
 
       final paymentsData = await supabase
@@ -68,10 +70,12 @@ class _CustomersScreenState extends State<CustomersScreen> {
         for (final h in sales) {
           if (h['customer_id'] != id) continue;
           final currency = AppCurrency.fromCode(h['currency'] as String?);
+          final transportFee = (h['transport_fee'] as num? ?? 0).toDouble();
           sold[currency] =
               (sold[currency] ?? 0) +
               (h['kg_sold'] as num).toDouble() *
-                  (h['price_per_kg'] as num).toDouble();
+                  (h['price_per_kg'] as num).toDouble() -
+              transportFee;
         }
         final paid = {for (final c in AppCurrency.values) c: 0.0};
         for (final p in payments) {

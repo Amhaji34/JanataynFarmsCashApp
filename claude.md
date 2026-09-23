@@ -108,6 +108,12 @@ a few days, and can end up sold to more than one customer over time. See
 id                uuid (PK)
 harvest_date      date
 kg_harvested      numeric (> 0)
+harvest_number    int (unique, auto-incrementing) — this harvest's
+                  display code is `#H<harvest_number>` (e.g. "#H3"),
+                  computed client-side, never a separate stored string.
+                  Backed by a dedicated sequence
+                  (`harvests_harvest_number_seq`), not a bare `serial`,
+                  so it survives independently of the table
 note              text (nullable)
 created_by        uuid (FK -> auth.users.id)
 created_at        timestamptz
@@ -126,20 +132,30 @@ harvest_id     uuid (FK -> harvests.id) — not nullable; which harvest
 customer_id    uuid (FK -> customers.id) — not nullable
 kg_sold        numeric (> 0)
 price_per_kg   numeric (>= 0)
+transport_fee  numeric (>= 0, default 0) — deducted from what the
+               customer owes for this sale (see below); not itself
+               recorded as a business expense anywhere
 currency       text, 'USD' | 'SLSH' (default 'USD') — see "Currencies"
 sale_date      date — independent of the harvest's own date; this is
                what lets a sale happen a few days after harvesting
-note           text (nullable)
+note           text (nullable) — always includes the harvest's `#H<n>`
+               code, appended automatically at save time (see
+               "Harvests and customer sales" below)
 created_by     uuid (FK -> auth.users.id)
 created_at     timestamptz
 ```
-Total sale value (`kg_sold * price_per_kg`) is **calculated, never
-stored** — same philosophy as everywhere else in this app. A sale can't
-exceed the harvest's remaining stock; that's validated client-side in
-`add_sale_screen.dart` (fetch existing sales for the chosen harvest, sum
-their `kg_sold`), the same pattern as the multi-invoice "allocated must
-equal total" and Transfer/Exchange "can't exceed available balance"
-checks — not a DB constraint.
+What the customer owes for one sale is **calculated, never stored**:
+`kg_sold * price_per_kg - transport_fee` (floored at 0). This — not the
+raw `kg_sold * price_per_kg` — is the figure used everywhere a sale's
+value feeds into a customer's balance or a "total sold"/"outstanding"
+stat, so those totals stay internally consistent (outstanding = value
+summed this way, minus payments). A sale can't exceed the harvest's
+remaining stock; that's validated client-side in `add_sale_screen.dart`
+(fetch existing sales for the chosen harvest, sum their `kg_sold`), the
+same pattern as the multi-invoice "allocated must equal total" and
+Transfer/Exchange "can't exceed available balance" checks — not a DB
+constraint. Same client-side pattern for `transport_fee` not exceeding
+the sale's raw value.
 
 ### `customer_payments`
 Every payment a customer makes — the upfront amount recorded at sale
@@ -481,33 +497,62 @@ account's own History screen.
 
 Harvesting and selling are two separate steps, on purpose: a harvest is
 logged as pure inventory (kg + date, `add_harvest_screen.dart`), and can
-sit unsold for a few days before anything is sold from it. Selling —
-`add_sale_screen.dart` — records one `harvest_sales` row against a
-chosen harvest's remaining stock: kg sold, price/kg, currency, customer,
-sale date. A single harvest can have many of these, to different
-customers, at different prices, on different dates —
-`harvest_detail_screen.dart` (reached by tapping a harvest on
-`harvests_screen.dart`) is where that shows up: kg harvested / sold /
-remaining, and the list of individual sales. A harvest with 0 remaining
-kg shows "Fully sold" and its "Add sale" button disappears. Total sale
-value (`kg_sold * price_per_kg`) is **calculated, never stored**, same
-philosophy as everywhere else.
+sit unsold for a few days before anything is sold from it. Every harvest
+gets a sequential display code, `#H<harvest_number>` (e.g. "#H3"),
+shown as its primary label everywhere it appears (harvests_screen.dart
+rows, harvest_detail_screen.dart's AppBar, the harvest picker in
+add_sale_screen.dart) — see the `harvests` table doc above for how the
+number itself is generated.
 
-The customer can pay some, all, or none of a sale's value up front (the
-upfront field on `add_sale_screen.dart` defaults to `0.00` and is capped
-at that sale's total value). Any unpaid remainder simply adds to the
-customer's running balance, to be collected later via the Customers >
-customer detail > "Record payment" screen. Both paths — the upfront
-payment at sale time and a later standalone payment — go through the
-same shared function, `recordCustomerPayment()`
-(`lib/services/customer_payments.dart`), which does two things
-atomically from the app's point of view: inserts the `customer_payments`
-row (`sale_id` set for an upfront payment, null for a standalone one),
-then inserts a `fund_add` into the **Revenue** funding account for that
-same amount **and currency**. This is the mechanism by which harvest
-sale proceeds flow into the funding-accounts system described above — a
-customer payment always credits Revenue in its own currency, exactly
-like an admin manually adding funds would.
+Selling — `add_sale_screen.dart` — records one `harvest_sales` row
+against a chosen harvest's remaining stock: kg sold, price/kg,
+transportation fee (optional), currency, customer, sale date. A single
+harvest can have many of these, to different customers, at different
+prices, on different dates — `harvest_detail_screen.dart` (reached by
+tapping a harvest on `harvests_screen.dart`) is where that shows up: kg
+harvested / sold / remaining, and the list of individual sales. A
+harvest with 0 remaining kg shows "Fully sold" and its "Add sale" button
+disappears.
+
+**Transportation fee:** `add_sale_screen.dart` has an optional
+"Transportation fee" field, deducted from what the customer owes for
+that sale — the summary box on the form shows "Total value" (raw
+`kg_sold * price_per_kg`), "Transportation fee", and "Customer owes"
+(the difference) as three distinct lines, but only the fee-adjusted
+"Customer owes" figure is what actually flows into the customer's
+balance, the harvest's/customer's/dashboard's "total sold"/"outstanding"
+stats, and the upfront-payment cap — see the `harvest_sales` table doc
+above for the exact formula. The fee itself isn't recorded as a business
+expense anywhere; it purely reduces the customer's obligation.
+
+**Note-tagging with the harvest code:** every note field touched by
+recording a sale — the `harvest_sales` row's own `note`, the
+`customer_payments` row for an upfront payment, and the `fund_add` note
+on the Revenue account it triggers — automatically gets that harvest's
+`#H<n>` code appended (e.g. a custom note becomes `"some note (#H3)"`;
+an empty note just becomes `"#H3"`). This is built in
+`add_sale_screen.dart._save()`, not a DB trigger, so it only applies
+going forward. It's what makes a Revenue account_transactions row (seen
+in account_history_screen.dart, which now shows every entry's note — see
+"Funding accounts" above) traceable back to the harvest that produced
+it, without a formal FK from `account_transactions` to `harvests`.
+
+The customer can pay some, all, or none of a sale's fee-adjusted value up
+front (the upfront field on `add_sale_screen.dart` defaults to `0.00`
+and is capped at what the customer owes for that sale, after the
+transportation fee). Any unpaid remainder simply adds to the customer's
+running balance, to be collected later via the Customers > customer
+detail > "Record payment" screen. Both paths — the upfront payment at
+sale time and a later standalone payment — go through the same shared
+function, `recordCustomerPayment()` (`lib/services/customer_payments.
+dart`), which does two things atomically from the app's point of view:
+inserts the `customer_payments` row (`sale_id` set for an upfront
+payment, null for a standalone one), then inserts a `fund_add` into the
+**Revenue** funding account for that same amount **and currency**. This
+is the mechanism by which harvest sale proceeds flow into the
+funding-accounts system described above — a customer payment always
+credits Revenue in its own currency, exactly like an admin manually
+adding funds would.
 
 A customer's outstanding balance is always **calculated**, never
 stored, and computed **per currency** (see "Currencies" above) since a
@@ -815,7 +860,12 @@ lib/
 │   │                                 ("Exchanged from/to <currency>")
 │   │                                 for any account, including Petty
 │   │                                 Cash - not shown in the Transactions
-│   │                                 log, only here.
+│   │                                 log, only here. Each card also shows
+│   │                                 that entry's `note` when present
+│   │                                 (e.g. a Revenue fund_add from a
+│   │                                 harvest sale payment shows its
+│   │                                 `#H<n>` code here - see "Harvests
+│   │                                 and customer sales" above).
 │   ├── transaction_log_screen.dart — searchable, filterable list of all
 │   │                                 transactions, plus Petty Cash's
 │   │                                 transfer_in/transfer_out rows merged
@@ -868,17 +918,21 @@ lib/
 │   │                                 guidance before changing this.
 │   │                                 Read-only, so visible to viewers too.
 │   ├── harvests_screen.dart       — every harvest logged, newest first,
-│   │                                 with summary stats (count, total kg,
-│   │                                 total sold value, total
+│   │                                 labeled by its `#H<n>` display code
+│   │                                 (`harvest_number`) rather than just
+│   │                                 its date, with summary stats (count,
+│   │                                 total kg, total sold value, total
 │   │                                 outstanding — the value/outstanding
-│   │                                 stats sum `harvest_sales`, not
-│   │                                 `harvests`, since a harvest alone
-│   │                                 has no price). Each row shows kg
-│   │                                 harvested/sold and either "Fully
-│   │                                 sold" or "`X` kg left"; tapping one
-│   │                                 opens harvest_detail_screen.dart.
-│   │                                 FAB to add a harvest, admin only.
-│   │                                 Read-only list visible to viewers.
+│   │                                 stats sum `harvest_sales`
+│   │                                 fee-adjusted (`kg_sold * price_per_kg
+│   │                                 - transport_fee`), not `harvests`,
+│   │                                 since a harvest alone has no price).
+│   │                                 Each row shows kg harvested/sold and
+│   │                                 either "Fully sold" or "`X` kg left";
+│   │                                 tapping one opens
+│   │                                 harvest_detail_screen.dart. FAB to
+│   │                                 add a harvest, admin only. Read-only
+│   │                                 list visible to viewers.
 │   ├── add_harvest_screen.dart    — logs a harvest as pure inventory
 │   │                                 intake: date, kg, note. No
 │   │                                 customer/price/currency — see
@@ -888,7 +942,15 @@ lib/
 │   │                                 remaining plus the list of
 │   │                                 individual sales against it (a
 │   │                                 harvest can be sold to more than
-│   │                                 one customer). "Add sale" button
+│   │                                 one customer). Takes a required
+│   │                                 `harvestNumber` param; AppBar title
+│   │                                 is `#H<n> · <date>`. Each sale row
+│   │                                 shows its transport fee inline
+│   │                                 (`− <fee> transport`) when set, and
+│   │                                 its trailing amount is the
+│   │                                 fee-adjusted amount the customer
+│   │                                 owes for that sale, not the raw
+│   │                                 kg × price value. "Add sale" button
 │   │                                 (admin only) opens
 │   │                                 add_sale_screen.dart pre-selecting
 │   │                                 this harvest; replaced by a "Fully
@@ -897,23 +959,39 @@ lib/
 │   ├── add_sale_screen.dart       — records one sale against a chosen
 │   │                                 harvest's remaining stock: harvest
 │   │                                 picker (only harvests with
-│   │                                 remaining kg > 0, pre-selected when
-│   │                                 opened from harvest_detail_screen.
-│   │                                 dart), customer dropdown (with a
+│   │                                 remaining kg > 0, each row labeled
+│   │                                 by its `#H<n>` code, pre-selected
+│   │                                 when opened from
+│   │                                 harvest_detail_screen.dart),
+│   │                                 customer dropdown (with a
 │   │                                 "+ Add customer" shortcut into
 │   │                                 customers_screen.dart), kg to sell
 │   │                                 (validated against that harvest's
 │   │                                 remaining stock), currency, price/kg
 │   │                                 (computed total value shown live),
+│   │                                 an optional transportation fee
+│   │                                 (subtracted from the total value to
+│   │                                 get what the customer owes for this
+│   │                                 sale — the summary box shows Total
+│   │                                 value, and, only when a fee is set,
+│   │                                 Transportation fee and the
+│   │                                 fee-adjusted Customer owes),
 │   │                                 sale date (independent of the
 │   │                                 harvest's own date — this is what
 │   │                                 lets a sale happen a few days
 │   │                                 later), and an optional upfront
 │   │                                 payment (defaults to 0, capped at
-│   │                                 total value). If upfront > 0, calls
-│   │                                 `recordCustomerPayment()` after
-│   │                                 inserting the `harvest_sales` row.
-│   │                                 Admin only.
+│   │                                 the fee-adjusted amount owed, not
+│   │                                 the raw total value). On save, the
+│   │                                 sale's `note` has the harvest's
+│   │                                 `#H<n>` code appended automatically
+│   │                                 (`(#H<n>)`, or just the code if the
+│   │                                 note was empty); if upfront > 0,
+│   │                                 calls `recordCustomerPayment()`
+│   │                                 after inserting the `harvest_sales`
+│   │                                 row, passing a note that also carries
+│   │                                 the `#H<n>` code — see "Harvests and
+│   │                                 customer sales" above. Admin only.
 │   ├── customers_screen.dart      — list of customers with each one's
 │   │                                 current owed/settled balance
 │   │                                 (calculated from harvest_sales +

@@ -97,16 +97,22 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
       for (final h in sales) {
         final kg = (h['kg_sold'] as num).toDouble();
         final pricePerKg = (h['price_per_kg'] as num).toDouble();
-        final total = kg * pricePerKg;
+        final transportFee = (h['transport_fee'] as num? ?? 0).toDouble();
+        final owed = (kg * pricePerKg - transportFee).clamp(
+          0.0,
+          double.infinity,
+        );
         final currency = AppCurrency.fromCode(h['currency'] as String?);
-        sold[currency] = (sold[currency] ?? 0) + total;
+        sold[currency] = (sold[currency] ?? 0) + owed;
         entries.add(
           _Entry(
             date: DateTime.parse(h['sale_date'] as String),
             label: 'Harvest sale',
-            subtitle:
-                '${kg.toStringAsFixed(1)} kg @ ${formatMoney(pricePerKg, currency)}/kg',
-            amount: total,
+            subtitle: transportFee > 0
+                ? '${kg.toStringAsFixed(1)} kg @ ${formatMoney(pricePerKg, currency)}/kg '
+                      '(−${formatMoney(transportFee, currency)} transport)'
+                : '${kg.toStringAsFixed(1)} kg @ ${formatMoney(pricePerKg, currency)}/kg',
+            amount: owed,
             currency: currency,
             isPositive: false,
             color: AppColors.brandGreenLight,

@@ -134,7 +134,7 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
       // month's harvest sales value.
       final harvestSales = await supabase
           .from('harvest_sales')
-          .select('kg_sold, price_per_kg, sale_date, currency');
+          .select('kg_sold, price_per_kg, transport_fee, sale_date, currency');
       final customerPayments = await supabase
           .from('customer_payments')
           .select('amount, currency');
@@ -220,9 +220,11 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
       final monthHarvestValue = _emptyTotals();
       for (final h in harvestSales) {
         final currency = AppCurrency.fromCode(h['currency'] as String?);
+        final transportFee = (h['transport_fee'] as num? ?? 0).toDouble();
         final value =
             (h['kg_sold'] as num).toDouble() *
-            (h['price_per_kg'] as num).toDouble();
+                (h['price_per_kg'] as num).toDouble() -
+            transportFee;
         harvestTotalValue[currency] =
             (harvestTotalValue[currency] ?? 0) + value;
         final date = DateTime.parse(h['sale_date'] as String);
