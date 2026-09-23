@@ -183,6 +183,75 @@ outstanding[currency] = sum(harvest_sales.kg_sold * harvest_sales.price_per_kg
                              where customer_payments.currency = currency)
 ```
 
+### `suppliers`
+People/businesses the farm buys from — accounts payable, the mirror
+image of `customers`. Simple name lookup, same philosophy: no financial
+fields here; what's owed to a supplier is calculated from
+`supplier_purchases` and `supplier_payments`.
+```
+id          uuid (PK)
+name        text
+phone       text (nullable)
+note        text (nullable)
+created_at  timestamptz
+```
+
+### `supplier_purchases`
+One row per thing bought from a supplier — the total cost owed for that
+purchase, separate from how much of it has actually been paid (that's
+`supplier_payments`, below). Unlike harvests/harvest_sales there's no
+inventory split here — a purchase is a single flat cost, not a quantity
+sold down over time.
+```
+id             uuid (PK)
+supplier_id    uuid (FK -> suppliers.id) — not nullable
+item           text — free-text description of what was bought
+amount         numeric (>= 0) — the total cost owed for this purchase
+currency       text, 'USD' | 'SLSH' (default 'USD') — see "Currencies"
+purchase_date  date
+note           text (nullable)
+created_by     uuid (FK -> auth.users.id)
+created_at     timestamptz
+```
+
+### `supplier_payments`
+Every payment made toward a supplier — the amount paid at purchase time
+*and* any later payment — lands here as one ledger, same shape as
+`customer_payments` but money flowing the other direction.
+```
+id             uuid (PK)
+supplier_id    uuid (FK -> suppliers.id)
+purchase_id    uuid (nullable, FK -> supplier_purchases.id) — context
+               only; a payment always reduces the supplier's overall
+               balance, never one specific purchase's balance
+amount         numeric (> 0)
+currency       text, 'USD' | 'SLSH' (default 'USD')
+payment_date   date
+note           text (nullable)
+created_by     uuid (FK -> auth.users.id)
+created_at     timestamptz
+```
+What's owed to a supplier is always calculated, **per currency**, same
+formula shape as customers:
+```
+owed[currency] = sum(supplier_purchases.amount for that supplier,
+                      where supplier_purchases.currency = currency)
+                - sum(supplier_payments.amount for that supplier,
+                      where supplier_payments.currency = currency)
+```
+**Cash impact — the one place this differs from customer payments:** a
+customer payment only credits the Revenue funding account (see "Funding
+accounts" below) and still needs a manual transfer into Petty Cash. A
+supplier payment is the opposite — real cash actually leaving the
+business right now — so `recordSupplierPayment()`
+(`lib/services/supplier_payments.dart`) books it as a normal `expense`
+transaction (in `transactions` + `transaction_items`, category
+"Supplier purchases", seeded once via migration into
+`expense_categories`) rather than touching `accounts` at all. This means
+a supplier payment draws down Petty Cash through the existing formula
+with no other code changes, and shows up naturally in the Transaction
+Log and the Reports Expenses tab under its own category.
+
 ### `transactions`
 The parent record for every cash event. One row per "payment event" —
 whether it's a single $4 fuel purchase or a $10 payment covering multiple
@@ -659,19 +728,20 @@ lib/
 │                                     admin-only): **group 1** — Accounts,
 │                                     Harvests, Run Payroll, Transactions,
 │                                     Reports; **group 2** — Expense
-│                                     categories, Customers, Staff,
-│                                     Partners. Accounts/Run
+│                                     categories, Customers, Suppliers,
+│                                     Staff, Partners. Accounts/Run
 │                                     Payroll/Expense categories/Staff/
 │                                     Partners are admin-only (each
 │                                     individually gated, not a block
 │                                     spread, since group 2 mixes
-│                                     admin-only items with Customers,
-│                                     which viewers see too); Harvests,
-│                                     Transactions, Reports, Customers, and
-│                                     Log out are always shown, so a
-│                                     viewer sees a shorter version of the
-│                                     same two groups rather than the
-│                                     groups disappearing outright.
+│                                     admin-only items with Customers/
+│                                     Suppliers, which viewers see too);
+│                                     Harvests, Transactions, Reports,
+│                                     Customers, Suppliers, and Log out are
+│                                     always shown, so a viewer sees a
+│                                     shorter version of the same two
+│                                     groups rather than the groups
+│                                     disappearing outright.
 │                                     "Accounts" navigates to
 │                                     settings_screen.dart — the nav label
 │                                     was renamed from "Settings" since
@@ -679,17 +749,31 @@ lib/
 │                                     funding accounts now (see the
 │                                     settings_screen.dart entry below).
 ├── services/
-│   └── customer_payments.dart     — `recordCustomerPayment()`, the shared
-│                                     function used by both
-│                                     add_sale_screen.dart (upfront
-│                                     payment) and record_payment_screen.dart
+│   ├── customer_payments.dart     — `recordCustomerPayment()`, the shared
+│   │                                 function used by both
+│   │                                 add_sale_screen.dart (upfront
+│   │                                 payment) and record_payment_screen.dart
+│   │                                 (standalone payment): inserts the
+│   │                                 `customer_payments` row (`sale_id`
+│   │                                 set or null), then a `fund_add` into
+│   │                                 the Revenue account for the same
+│   │                                 amount. Extracted here specifically
+│   │                                 to avoid duplicating that two-step
+│   │                                 logic in both screens.
+│   └── supplier_payments.dart     — `recordSupplierPayment()`, the mirror
+│                                     of `recordCustomerPayment()` for
+│                                     accounts payable, used by both
+│                                     add_purchase_screen.dart (paid-now
+│                                     amount) and
+│                                     record_supplier_payment_screen.dart
 │                                     (standalone payment): inserts the
-│                                     `customer_payments` row (`sale_id`
-│                                     set or null), then a `fund_add` into
-│                                     the Revenue account for the same
-│                                     amount. Extracted here specifically
-│                                     to avoid duplicating that two-step
-│                                     logic in both screens.
+│                                     `supplier_payments` row (`purchase_id`
+│                                     set or null), then — unlike the
+│                                     customer side — books the same amount
+│                                     as a real `expense` transaction (see
+│                                     the `supplier_payments` table doc
+│                                     above for why) so it draws down
+│                                     Petty Cash immediately.
 ├── screens/
 │   ├── auth_gate.dart             — the actual `home` widget. Renders
 │   │                                 DashboardScreen if a session is
@@ -1031,13 +1115,63 @@ lib/
 │   │                                 harvest sales and payments. "Record
 │   │                                 payment" button (admin only) opens
 │   │                                 record_payment_screen.dart.
-│   └── record_payment_screen.dart — standalone form (date, amount, note)
-│                                     for a customer paying down their
-│                                     balance outside of a sale;
-│                                     validates against their current
-│                                     outstanding balance and calls the
-│                                     same `recordCustomerPayment()`
-│                                     shared function. Admin only.
+│   ├── record_payment_screen.dart — standalone form (date, amount, note)
+│   │                                 for a customer paying down their
+│   │                                 balance outside of a sale;
+│   │                                 validates against their current
+│   │                                 outstanding balance and calls the
+│   │                                 same `recordCustomerPayment()`
+│   │                                 shared function. Admin only.
+│   ├── suppliers_screen.dart      — accounts-payable mirror of
+│   │                                 customers_screen.dart: list of
+│   │                                 suppliers with each one's current
+│   │                                 owed/settled balance (calculated from
+│   │                                 supplier_purchases + supplier_payments,
+│   │                                 "You owe"/"Settled" instead of
+│   │                                 "Owes"/"Settled" since the direction
+│   │                                 is reversed), plus an add-new form
+│   │                                 (name, phone, note). FAB ("Purchase",
+│   │                                 admin only) opens
+│   │                                 add_purchase_screen.dart with no
+│   │                                 supplier pre-selected. Tapping a
+│   │                                 supplier opens
+│   │                                 supplier_detail_screen.dart.
+│   ├── add_purchase_screen.dart   — records something bought from a
+│   │                                 supplier: supplier dropdown (with a
+│   │                                 "+ Add supplier" shortcut into
+│   │                                 suppliers_screen.dart, pre-selected
+│   │                                 when opened from
+│   │                                 supplier_detail_screen.dart), a
+│   │                                 free-text item description, currency,
+│   │                                 total cost, and how much was paid
+│   │                                 right now (defaults to 0, capped at
+│   │                                 the total cost — same "often partial
+│   │                                 or nothing" shape as a harvest sale's
+│   │                                 upfront payment, just for money going
+│   │                                 out instead of in), date, note. On
+│   │                                 save, inserts the
+│   │                                 `supplier_purchases` row, then — if
+│   │                                 paid-now > 0 — calls
+│   │                                 `recordSupplierPayment()`. Admin only.
+│   ├── supplier_detail_screen.dart — one supplier's balance plus a merged,
+│   │                                 date-sorted history of purchases
+│   │                                 (labeled by their item description)
+│   │                                 and payments — same shape as
+│   │                                 customer_detail_screen.dart, signs
+│   │                                 flipped to match ("+"/cashIn for a
+│   │                                 payment made, "-"/expense for a
+│   │                                 purchase). "Add purchase" and "Record
+│   │                                 payment" buttons (admin only) open
+│   │                                 add_purchase_screen.dart (pre-selecting
+│   │                                 this supplier) and
+│   │                                 record_supplier_payment_screen.dart.
+│   └── record_supplier_payment_screen.dart — standalone form (date,
+│                                     amount, note) for paying a supplier
+│                                     down outside of a purchase; validates
+│                                     against what's currently owed to them
+│                                     and calls the same
+│                                     `recordSupplierPayment()` shared
+│                                     function. Admin only.
 ```
 
 Dashboard and transaction log both independently fetch and sum
@@ -1102,10 +1236,12 @@ a raw hex is drifting from the system.
    authenticated users, write = admin role only.
 2. New transaction-adjacent features should go through `transactions` +
    `transaction_items` (expense/payroll/partner-loan events),
-   `accounts` + `account_transactions` (funding/capital events), or
+   `accounts` + `account_transactions` (funding/capital events),
    `customers` + `harvests` + `customer_payments` (harvest sales and what
-   customers owe), not new bespoke tables, unless the data genuinely
-   isn't a cash event.
+   customers owe), or `suppliers` + `supplier_purchases` +
+   `supplier_payments` (purchases on credit and what's owed to
+   suppliers), not new bespoke tables, unless the data genuinely isn't a
+   cash event.
 3. Partners are still just a simple name lookup — no per-partner
    equity/profit-share fields. Capital *is* tracked now (see "Funding
    accounts"), but it's tracked at the business level via `accounts`, not

@@ -10,6 +10,7 @@ import '../screens/expense_categories_screen.dart';
 import '../screens/staff_screen.dart';
 import '../screens/partners_screen.dart';
 import '../screens/settings_screen.dart';
+import '../screens/suppliers_screen.dart';
 import '../theme/app_theme.dart';
 import 'app_ui.dart';
 
@@ -186,6 +187,13 @@ class AppDrawer extends StatelessWidget {
                   label: 'Customers',
                   color: AppColors.brandNavy,
                   destination: const CustomersScreen(),
+                ),
+                _navTile(
+                  context: context,
+                  icon: Icons.local_shipping_outlined,
+                  label: 'Suppliers',
+                  color: AppColors.expense,
+                  destination: const SuppliersScreen(),
                 ),
                 if (isAdmin) ...[
                   _navTile(
