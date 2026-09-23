@@ -340,7 +340,7 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
           Expanded(
             child: Text(
               '${isSource ? 'From' : 'Into'}: Petty Cash',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13.5,
                 fontWeight: FontWeight.w700,
                 color: AppColors.brandGreenDeep,
@@ -349,10 +349,7 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
           ),
           Text(
             '${formatMoney(_pettyCashBalances[_selectedCurrency.code] ?? 0, _selectedCurrency)} available',
-            style: const TextStyle(
-              fontSize: 12,
-              color: AppColors.brandGreenDeep,
-            ),
+            style: TextStyle(fontSize: 12, color: AppColors.brandGreenDeep),
           ),
         ],
       ),
@@ -484,7 +481,7 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
                       ),
                       child: Row(
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.calendar_today_outlined,
                             size: 17,
                             color: AppColors.brandGreen,

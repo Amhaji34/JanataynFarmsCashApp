@@ -322,7 +322,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
                             ),
                             child: Row(
                               children: [
-                                const Icon(
+                                Icon(
                                   Icons.calendar_today_outlined,
                                   size: 17,
                                   color: AppColors.brandGreen,
@@ -561,13 +561,13 @@ class _PayrollScreenState extends State<PayrollScreen> {
               ),
               child: Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.account_balance_wallet_outlined,
                     size: 16,
                     color: AppColors.brandGreen,
                   ),
                   const SizedBox(width: 8),
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       'Will receive',
                       style: TextStyle(
@@ -579,7 +579,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
                   ),
                   Text(
                     formatMoney(line.netAmount, line.currency),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
                       letterSpacing: -0.3,

@@ -19,6 +19,9 @@ class _LightTokens {
   static const inkMuted = Color(0xFF8B8F8A);
   static const loan = Color(0xFF3B7DD8);
   static const advance = Color(0xFF8257E5);
+  static const brandGreen = Color(0xFF1B5E3A);
+  static const brandGreenDeep = Color(0xFF0F3D25);
+  static const brandNavy = Color(0xFF1E3A5F);
 }
 
 class _DarkTokens {
@@ -30,10 +33,14 @@ class _DarkTokens {
   static const ink = Color(0xFFF1F2EE);
   static const inkSecondary = Color(0xFFAEB3A9);
   static const inkMuted = Color(0xFF7C8177);
-  // Brighter/lighter than the light-mode blue and purple - the light
-  // variants read as muddy against a dark canvas/surface.
+  // Brighter/lighter than their light-mode counterparts - all three were
+  // designed dark for text/icons on a light canvas, and read as nearly
+  // invisible against a dark one.
   static const loan = Color(0xFF6FA8FF);
   static const advance = Color(0xFFB18CFF);
+  static const brandGreen = Color(0xFF3FAE79);
+  static const brandGreenDeep = Color(0xFF6FCF97);
+  static const brandNavy = Color(0xFF7FB2E8);
 }
 
 /// Central design tokens for the app.
@@ -42,11 +49,15 @@ class _DarkTokens {
 /// green of the wordmark, the tractor red, and the navy of the wheels — so the
 /// UI reads as one brand family rather than default Material blue.
 ///
-/// The "surface"/"ink" tokens plus `loan`/`advance` are the only ones
-/// that differ between light and dark — the rest of the semantic
-/// transaction colors and all brand colors stay the same in both
-/// (they're already vivid enough to read on a dark canvas; blue and
-/// purple weren't). [AppThemeController] flips [_dark] whenever the
+/// The "surface"/"ink" tokens, `loan`/`advance`, and
+/// `brandGreen`/`brandGreenDeep`/`brandNavy` are the only ones that
+/// differ between light and dark — the rest (`brandGreenDark`,
+/// `brandGreenLight`, `brandRed`, `cream`, `expense`, `payroll`,
+/// `cashIn`, `neutral`, `danger`, the decorative name palette) stay the
+/// same in both, since none of them are used as small text sitting
+/// directly on the bare canvas the way the theme-aware ones are — those
+/// were designed dark, for a light canvas, and go nearly invisible as
+/// text on a dark one. [AppThemeController] flips [_dark] whenever the
 /// effective brightness changes and triggers a full app rebuild, so
 /// every widget re-reads these getters during that rebuild. Because a
 /// runtime-switchable color can never be a Dart `const`, any widget
@@ -59,13 +70,22 @@ class AppColors {
 
   static bool _dark = false;
 
-  // ---- Brand ------------------------------------------------------------
-  static const brandGreen = Color(0xFF1B5E3A);
+  // ---- Brand --------------------------------------------------------------
+  // brandGreen/brandGreenDeep/brandNavy are theme-aware (dark mode uses a
+  // brighter variant - see _LightTokens/_DarkTokens): all three were
+  // designed dark, for text/icons on a light canvas, and go nearly
+  // invisible as text on a dark one. brandGreenDark/brandGreenLight/
+  // brandRed/cream are unaffected - none of them are used as small text
+  // on the bare canvas the way the other three are.
+  static Color get brandGreen =>
+      _dark ? _DarkTokens.brandGreen : _LightTokens.brandGreen;
   static const brandGreenDark = Color(0xFF134026);
-  static const brandGreenDeep = Color(0xFF0F3D25);
+  static Color get brandGreenDeep =>
+      _dark ? _DarkTokens.brandGreenDeep : _LightTokens.brandGreenDeep;
   static const brandGreenLight = Color(0xFF2E8B57);
   static const brandRed = Color(0xFFB93B36);
-  static const brandNavy = Color(0xFF1E3A5F);
+  static Color get brandNavy =>
+      _dark ? _DarkTokens.brandNavy : _LightTokens.brandNavy;
   static const cream = Color(0xFFEEEFEA);
 
   // ---- Surfaces (theme-aware) --------------------------------------------
@@ -240,10 +260,18 @@ class AppTheme {
         ? _DarkTokens.inkSecondary
         : _LightTokens.inkSecondary;
     final inkMuted = isDark ? _DarkTokens.inkMuted : _LightTokens.inkMuted;
+    // AppTheme builds both light and dark ThemeData up front (MaterialApp
+    // needs both at once), so - like every other token above - this must
+    // come from the fixed per-brightness palette, never the ambient
+    // AppColors.brandGreen getter, which reflects whichever mode is
+    // *currently* active and would otherwise leak into the wrong theme.
+    final brandGreen = isDark
+        ? _DarkTokens.brandGreen
+        : _LightTokens.brandGreen;
 
     final scheme = ColorScheme.fromSeed(
-      seedColor: AppColors.brandGreen,
-      primary: AppColors.brandGreen,
+      seedColor: brandGreen,
+      primary: brandGreen,
       brightness: brightness,
     ).copyWith(surface: surface, error: AppColors.danger, onSurface: ink);
 
@@ -301,7 +329,7 @@ class AppTheme {
 
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.brandGreen,
+          backgroundColor: brandGreen,
           foregroundColor: Colors.white,
           disabledBackgroundColor: isDark
               ? const Color(0xFF3A3F37)
@@ -334,15 +362,15 @@ class AppTheme {
         ),
       ),
 
-      floatingActionButtonTheme: const FloatingActionButtonThemeData(
-        backgroundColor: AppColors.brandGreen,
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: brandGreen,
         foregroundColor: Colors.white,
         elevation: 3,
       ),
 
       chipTheme: ChipThemeData(
         backgroundColor: surface,
-        selectedColor: AppColors.brandGreen,
+        selectedColor: brandGreen,
         side: BorderSide(color: hairline),
         labelStyle: TextStyle(
           fontSize: 13,
@@ -361,9 +389,7 @@ class AppTheme {
 
       dividerTheme: DividerThemeData(color: hairline, thickness: 1, space: 1),
 
-      progressIndicatorTheme: const ProgressIndicatorThemeData(
-        color: AppColors.brandGreen,
-      ),
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: brandGreen),
 
       listTileTheme: ListTileThemeData(iconColor: inkSecondary, textColor: ink),
     );

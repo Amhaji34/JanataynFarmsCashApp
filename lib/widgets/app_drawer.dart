@@ -86,7 +86,7 @@ class AppDrawer extends StatelessWidget {
         children: [
           // Brand header
           Container(
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,

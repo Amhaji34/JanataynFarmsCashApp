@@ -482,7 +482,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                     InkWell(
                       onTap: _openAddCustomer,
                       borderRadius: BorderRadius.circular(6),
-                      child: const Padding(
+                      child: Padding(
                         padding: EdgeInsets.symmetric(
                           horizontal: 4,
                           vertical: 2,
@@ -576,7 +576,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                       ),
                       child: Row(
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.calendar_today_outlined,
                             size: 17,
                             color: AppColors.brandGreen,

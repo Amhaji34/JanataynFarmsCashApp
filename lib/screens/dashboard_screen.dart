@@ -653,7 +653,7 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                     ),
                   ),
             child: Container(
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,

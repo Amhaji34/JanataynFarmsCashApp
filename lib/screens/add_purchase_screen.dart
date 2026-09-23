@@ -197,7 +197,7 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
                     InkWell(
                       onTap: _openAddSupplier,
                       borderRadius: BorderRadius.circular(6),
-                      child: const Padding(
+                      child: Padding(
                         padding: EdgeInsets.symmetric(
                           horizontal: 4,
                           vertical: 2,
@@ -333,7 +333,7 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
                       ),
                       child: Row(
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.calendar_today_outlined,
                             size: 17,
                             color: AppColors.brandGreen,

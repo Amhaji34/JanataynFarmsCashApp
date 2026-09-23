@@ -920,7 +920,7 @@ class _EditTransactionSheetState extends State<_EditTransactionSheet> {
                     ),
                     child: Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.calendar_today_outlined,
                           size: 17,
                           color: AppColors.brandGreen,

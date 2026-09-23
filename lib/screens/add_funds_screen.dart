@@ -193,7 +193,7 @@ class _AddFundsScreenState extends State<AddFundsScreen> {
                       ),
                       child: Row(
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.calendar_today_outlined,
                             size: 17,
                             color: AppColors.brandGreen,

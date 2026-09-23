@@ -249,7 +249,7 @@ class _HarvestDetailScreenState extends State<HarvestDetailScreen> {
                           ),
                           child: Row(
                             children: [
-                              const IconBadge(
+                              IconBadge(
                                 icon: Icons.sell_outlined,
                                 color: AppColors.brandNavy,
                               ),
@@ -290,7 +290,7 @@ class _HarvestDetailScreenState extends State<HarvestDetailScreen> {
                               ),
                               Text(
                                 formatMoney(owed, currency),
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w700,
                                   letterSpacing: -0.2,

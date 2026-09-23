@@ -1405,33 +1405,50 @@ a raw hex is drifting from the system.
 
 ### Dark theme
 
-Nine tokens flip between light and dark: `canvas`, `surface`,
-`hairline`, `fieldFill`, `ink`, `inkSecondary`, `inkMuted`, and — since
-the light-mode blue/purple read as muddy on a dark canvas —
-`loan`/`advance` (dark mode uses a brighter `#6FA8FF`/`#B18CFF` instead
-of the light-mode `#3B7DD8`/`#8257E5`). Every other `AppColors` value
-(remaining brand colors, `expense`/`payroll`/`cashIn`/`neutral`,
-`danger`, the decorative name palette) is the same in both, since
-they're already vivid enough to read on a dark canvas. Theme-aware
-tokens are `static Color get`s backed by a private `AppColors._dark`
-flag, **not** `static const` like the rest of the file — a
-runtime-switchable color can never be a Dart compile-time constant.
-This is the one place this app's "just call `AppColors.x`, no
-`BuildContext` needed" convention (see the note atop `AppColors` in
-`app_theme.dart`) has a real cost: any widget using a theme-aware token
-inside a `const` constructor needs that `const` removed — ~165 call
-sites across 30 files for the original seven, one more when `loan`/
-`advance` joined them. If you make another token theme-aware later,
-expect a similar sweep, not just a palette edit — `flutter analyze`
-enumerates every miss precisely (`invalid_constant`), which is how both
-passes here were done.
+Twelve tokens flip between light and dark: `canvas`, `surface`,
+`hairline`, `fieldFill`, `ink`, `inkSecondary`, `inkMuted`,
+`loan`/`advance` (brighter `#6FA8FF`/`#B18CFF` in dark mode vs. the
+light-mode `#3B7DD8`/`#8257E5`), and `brandGreen`/`brandGreenDeep`/
+`brandNavy` (brighter `#3FAE79`/`#6FCF97`/`#7FB2E8` in dark mode vs.
+`#1B5E3A`/`#0F3D25`/`#1E3A5F`) — that last group was added after the
+first dark-theme pass shipped with green and blue text unreadable on
+Harvests, Harvest Detail, and Account History: `brandGreen`,
+`brandGreenDeep`, and `brandNavy` were designed dark, for text/icons on
+a *light* canvas, and are used as text color directly on the bare
+canvas/surface in several places — a light-only palette does not
+survive that reuse. Every other `AppColors` value (`brandGreenDark`,
+`brandGreenLight`, `brandRed`, `cream`, `expense`, `payroll`, `cashIn`,
+`neutral`, `danger`, the decorative name palette) is the same in both,
+since none of them get used as small text sitting directly on the
+canvas the way the theme-aware ones are. Theme-aware tokens are
+`static Color get`s backed by a private `AppColors._dark` flag, **not**
+`static const` like the rest of the file — a runtime-switchable color
+can never be a Dart compile-time constant. This is the one place this
+app's "just call `AppColors.x`, no `BuildContext` needed" convention
+(see the note atop `AppColors` in `app_theme.dart`) has a real cost: any
+widget using a theme-aware token inside a `const` constructor needs
+that `const` removed — ~165 call sites across 30 files for the original
+seven, ~30 more across the next two passes. If you make another token
+theme-aware later, expect a similar sweep, not just a palette edit —
+`flutter analyze` enumerates every miss precisely
+(`invalid_constant`), which is how every pass here was done. **The
+tell that a brand color needs to join this list:** it's being used as
+`color:`/`foregroundColor:` on a `Text`/`Icon` sitting directly on
+`canvas`/`surface` rather than as a background with white/fixed
+foreground on top of it (a button, a filled badge) — the latter reads
+fine in both themes without any change.
 
 `AppTheme.light`/`AppTheme.dark` don't read the ambient `AppColors`
 getters for this reason — building both at once from a shared mutable
 flag would let whichever one was built last clobber the other. Instead
 they each pull from private `_LightTokens`/`_DarkTokens` classes (the
 literal, always-const values) directly, so both `ThemeData`s stay fully
-`const`-safe regardless of the app's current mode.
+`const`-safe regardless of the app's current mode — this includes a
+local `brandGreen` variable inside `AppTheme._build()` for the
+button/FAB/chip/progress-indicator theming that used to read
+`AppColors.brandGreen` directly (a real bug once that became
+runtime-switchable, not just a style-const one: it would have baked
+whichever mode was *currently* active into both themes).
 
 `AppThemeController` (also in `app_theme.dart`) owns the current
 `ThemeMode` (light/dark/system — default **system**), persists it via

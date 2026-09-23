@@ -623,7 +623,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
           ),
           child: Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.calendar_today_outlined,
                 size: 17,
                 color: AppColors.brandGreen,
@@ -733,7 +733,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     return InkWell(
       onTap: _openManageCategories,
       borderRadius: BorderRadius.circular(6),
-      child: const Padding(
+      child: Padding(
         padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
         child: Row(
           mainAxisSize: MainAxisSize.min,

@@ -170,7 +170,7 @@ class _RecordPaymentScreenState extends State<RecordPaymentScreen> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.calendar_today_outlined,
                       size: 17,
                       color: AppColors.brandGreen,

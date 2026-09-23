@@ -310,7 +310,7 @@ class _ExchangeScreenState extends State<ExchangeScreen> {
                     ),
                     child: Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.info_outline,
                           size: 16,
                           color: AppColors.brandGreen,
@@ -320,7 +320,7 @@ class _ExchangeScreenState extends State<ExchangeScreen> {
                           child: Text(
                             '${formatMoney(_balances[_selectedAccountId]?[_fromCurrency] ?? 0, _fromCurrency)} '
                             'available in ${_fromCurrency.code}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12.5,
                               fontWeight: FontWeight.w600,
                               color: AppColors.brandGreenDeep,
@@ -400,7 +400,7 @@ class _ExchangeScreenState extends State<ExchangeScreen> {
                       ),
                       child: Row(
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.calendar_today_outlined,
                             size: 17,
                             color: AppColors.brandGreen,

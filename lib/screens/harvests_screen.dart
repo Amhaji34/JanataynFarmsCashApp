@@ -363,7 +363,7 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                                       amounts: value,
                                       crossAxisAlignment:
                                           CrossAxisAlignment.end,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 13,
                                         fontWeight: FontWeight.w700,
                                         color: AppColors.brandGreenDeep,
