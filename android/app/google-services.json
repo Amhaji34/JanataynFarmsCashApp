@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "864129709472",
+    "project_id": "janatain-27510",
+    "storage_bucket": "janatain-27510.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:864129709472:android:bcfff82a0a87526444a0c5",
+        "android_client_info": {
+          "package_name": "com.example.janatayn_farms"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBJfyR8YaFuD1chqI4Tz3JygXBIjsdNncA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

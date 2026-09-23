@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../main.dart';
 import '../screens/login_screen.dart';
+import '../services/push_notifications.dart';
 import '../screens/transaction_log_screen.dart';
 import '../screens/report_screen.dart';
 import '../screens/payroll_screen.dart';
@@ -27,6 +28,7 @@ class AppDrawer extends StatelessWidget {
 
   Future<void> _logout(BuildContext context) async {
     Navigator.of(context).pop();
+    await unregisterPushToken();
     await supabase.auth.signOut();
     if (context.mounted) {
       Navigator.of(
