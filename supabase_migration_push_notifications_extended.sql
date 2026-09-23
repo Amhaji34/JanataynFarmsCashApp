@@ -17,6 +17,13 @@ as $$
   end;
 $$;
 
+-- A supplier purchase paid for on the spot used to send two pushes: one
+-- from the supplier_purchases insert, one from this expense transaction
+-- (add_purchase_screen.dart also inserts via recordSupplierPayment()).
+-- That expense's note is always exactly 'Paid for <item>' for this one
+-- call site - a standalone payment via record_supplier_payment_screen.dart
+-- uses the user's own free-text note instead, so it's unaffected and
+-- still notifies on its own (there's no purchase-level push to cover it).
 create or replace function public.notify_new_transaction()
 returns trigger
 language plpgsql
@@ -30,6 +37,10 @@ declare
   body text;
 begin
   if new.type = 'advance_deduction' then
+    return new;
+  end if;
+
+  if new.type = 'expense' and new.note like 'Paid for %' then
     return new;
   end if;
 

@@ -697,13 +697,17 @@ Four kinds of inserts trigger a real Android push notification to the
 other two users (not the person who just made it), even if their app is
 closed: a `transactions` row (expense/payroll/loan/advance/
 loan_repayment — `advance_deduction` is skipped, no real cash moves), a
-`harvests` row, a `harvest_sales` row, and a `supplier_purchases` row
-(this last one fires **in addition to** the `transactions` push that
-already fires if some of it was paid immediately — see
-`services/supplier_payments.dart` — so a fully-paid-on-the-spot purchase
-currently sends two separate notifications; that's accepted as-is, not
-a bug). Firebase Cloud Messaging (FCM) is the delivery mechanism;
-Supabase is the trigger.
+`harvests` row, a `harvest_sales` row, and a `supplier_purchases` row.
+A supplier purchase paid for on the spot would otherwise also fire the
+`transactions` push that `services/supplier_payments.dart` triggers for
+the paid amount — `notify_new_transaction()` deliberately skips that
+one specific case (an `expense` row whose note is exactly
+`'Paid for <item>'`, a pattern only `add_purchase_screen.dart` ever
+produces) so it's one notification, not two; a standalone supplier
+payment (`record_supplier_payment_screen.dart`, free-text note) still
+notifies normally, since there's no purchase-level push to cover it.
+Firebase Cloud Messaging (FCM) is the delivery mechanism; Supabase is
+the trigger.
 
 **Flow:** insert on one of those four tables → its own Postgres trigger
 (`notify_new_transaction()` / `notify_new_harvest()` /
