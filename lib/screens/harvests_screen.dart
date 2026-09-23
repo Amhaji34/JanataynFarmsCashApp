@@ -115,6 +115,12 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
     (sum, h) => sum + (h['kg_harvested'] as num).toDouble(),
   );
 
+  double get _totalKgSold =>
+      _soldByHarvest.values.fold(0, (sum, kg) => sum + kg);
+
+  double get _totalKgRemaining =>
+      (_totalKg - _totalKgSold).clamp(0.0, double.infinity);
+
   Map<AppCurrency, double> get _totalOutstandingByCurrency => {
     for (final c in AppCurrency.values)
       c: (_totalValueByCurrency[c] ?? 0) - (_paidTotals[c] ?? 0),
@@ -174,7 +180,10 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                         child: StatTile(
                           icon: Icons.eco_outlined,
                           label: 'Total harvests',
-                          value: '${_harvests.length}',
+                          valueWidget: _StatValueWithSub(
+                            value: '${_harvests.length}',
+                            sub: '(${_totalKg.toStringAsFixed(1)} kg)',
+                          ),
                           color: AppColors.brandGreenLight,
                         ),
                       ),
@@ -182,8 +191,12 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                       Expanded(
                         child: StatTile(
                           icon: Icons.scale_outlined,
-                          label: 'Total kg',
-                          value: _totalKg.toStringAsFixed(1),
+                          label: 'Total kg sold',
+                          valueWidget: _StatValueWithSub(
+                            value: _totalKgSold.toStringAsFixed(1),
+                            sub:
+                                '(${_totalKgRemaining.toStringAsFixed(1)} kg left)',
+                          ),
                           color: AppColors.brandGreen,
                         ),
                       ),
@@ -367,6 +380,40 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                 ],
               ),
             ),
+    );
+  }
+}
+
+/// A StatTile value with a smaller parenthetical line underneath (e.g.
+/// harvest count with total kg, or kg sold with kg remaining).
+class _StatValueWithSub extends StatelessWidget {
+  const _StatValueWithSub({required this.value, required this.sub});
+
+  final String value;
+  final String sub;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            color: AppColors.ink,
+            letterSpacing: -0.3,
+          ),
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 2),
+        Text(
+          sub,
+          style: const TextStyle(fontSize: 11.5, color: AppColors.inkMuted),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
     );
   }
 }

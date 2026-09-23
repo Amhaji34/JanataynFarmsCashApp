@@ -938,13 +938,19 @@ lib/
 │   ├── harvests_screen.dart       — every harvest logged, newest first,
 │   │                                 labeled by its `#H<n>` display code
 │   │                                 (`harvest_number`) rather than just
-│   │                                 its date, with summary stats (count,
-│   │                                 total kg, total sold value, total
-│   │                                 outstanding — the value/outstanding
-│   │                                 stats sum `harvest_sales`
+│   │                                 its date. Top summary is two stat
+│   │                                 tiles — "Total harvests" (count, with
+│   │                                 total kg harvested as a parenthetical
+│   │                                 sub-line) and "Total kg sold" (with
+│   │                                 total kg remaining as a parenthetical
+│   │                                 sub-line, via the local
+│   │                                 `_StatValueWithSub` widget) — plus two
+│   │                                 cards for total sold value / total
+│   │                                 outstanding, both `DualCurrencyStat`s
+│   │                                 summed from `harvest_sales`
 │   │                                 fee-adjusted (`kg_sold * price_per_kg
 │   │                                 - transport_fee`), not `harvests`,
-│   │                                 since a harvest alone has no price).
+│   │                                 since a harvest alone has no price.
 │   │                                 Each row shows kg harvested/sold,
 │   │                                 either "Fully sold" or "`X` kg left",
 │   │                                 and — when that harvest has any sales
