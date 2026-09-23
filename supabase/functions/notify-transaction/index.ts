@@ -4,24 +4,6 @@ import { GoogleAuth } from "npm:google-auth-library@9";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-const TYPE_LABELS: Record<string, string> = {
-  expense: "Expense",
-  payroll: "Payroll",
-  loan: "Loan given",
-  advance: "Advance given",
-  loan_repayment: "Loan repayment",
-  advance_deduction: "Advance deduction",
-};
-
-function formatMoney(amount: number, currency: string): string {
-  const symbol = currency === "SLSH" ? "Sh" : "$";
-  const digits = currency === "SLSH" ? 0 : 2;
-  return `${symbol}${amount.toLocaleString("en-US", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  })}`;
-}
-
 Deno.serve(async (req) => {
   try {
     const expectedSecret = req.headers.get("x-webhook-secret");
@@ -35,9 +17,12 @@ Deno.serve(async (req) => {
       return new Response("Unauthorized", { status: 401 });
     }
 
+    // Every trigger (transactions/harvests/harvest_sales/
+    // supplier_purchases) now builds its own title/body in SQL - this
+    // function just relays it, so it doesn't need per-table formatting
+    // logic duplicated in TypeScript.
     const { record } = await req.json();
-    if (!record || record.type === "advance_deduction") {
-      // No real cash moves for advance_deduction - not worth a push.
+    if (!record || !record.title) {
       return new Response("skipped", { status: 200 });
     }
 
@@ -72,14 +57,18 @@ Deno.serve(async (req) => {
     const client = await auth.getClient();
     const accessToken = (await client.getAccessToken()).token;
 
-    const typeLabel = TYPE_LABELS[record.type as string] ?? record.type;
-    const amount = formatMoney(
-      Number(record.amount ?? 0),
-      record.currency ?? "USD",
-    );
-    const note = (record.note ?? "").trim();
-    const title = `${typeLabel}: ${amount}`;
-    const body = note.length > 0 ? note : "Tap to view in Janatayn Farms.";
+    const title = String(record.title);
+    const body = String(record.body ?? "");
+    // FCM data payload values must all be strings. Sent along so the
+    // tapped notification can open NotificationDetailScreen without a
+    // follow-up fetch - see lib/services/push_notifications.dart.
+    const notifData: Record<string, string> = {
+      kind: String(record.kind ?? ""),
+      id: String(record.id ?? ""),
+      title,
+      body,
+    };
+    if (record.type) notifData.type = String(record.type);
 
     const sendUrl =
       `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`;
@@ -97,6 +86,7 @@ Deno.serve(async (req) => {
             message: {
               token: row.token,
               notification: { title, body },
+              data: notifData,
               android: { priority: "high" },
             },
           }),

@@ -1,5 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -11,8 +12,18 @@ import 'theme/app_theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  // This app only ships on Android - push notifications aren't wired up
+  // for web (see firebase_options.dart) or desktop. A transaction added
+  // from the web build still triggers pushes to registered Android
+  // devices (the Postgres trigger sends them, not the client), so
+  // skipping Firebase here doesn't affect that - it just means the web
+  // build itself never registers as a push target.
+  if (!kIsWeb) {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  }
 
   await Supabase.initialize(
     url: 'https://jgxqvhryinoulpztprwz.supabase.co',
@@ -33,6 +44,12 @@ final supabase = Supabase.instance.client;
 // again after a pushed route is popped, so they can refresh their data.
 final routeObserver = RouteObserver<PageRoute>();
 
+// Lets services/push_notifications.dart push a route (e.g. the tapped
+// notification's detail screen) without needing a BuildContext of its
+// own - notification taps can arrive before any screen has one ready
+// (cold start) or from a background isolate.
+final navigatorKey = GlobalKey<NavigatorState>();
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -41,6 +58,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Janatayn Farms Cash Manager',
       debugShowCheckedModeBanner: false,
+      navigatorKey: navigatorKey,
       navigatorObservers: [routeObserver],
       locale: const Locale('en'),
       supportedLocales: const [Locale('en'), Locale('en', 'US')],

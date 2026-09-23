@@ -693,25 +693,63 @@ specific reason to deviate.
 
 ## Push notifications
 
-Every new `transactions` row (expense/payroll/loan/advance/
-loan_repayment — `advance_deduction` is skipped, no real cash moves)
-triggers a real Android push notification to the other two users (not
-the person who just made it), even if their app is closed. Firebase
-Cloud Messaging (FCM) is the delivery mechanism; Supabase is the
-trigger.
+Four kinds of inserts trigger a real Android push notification to the
+other two users (not the person who just made it), even if their app is
+closed: a `transactions` row (expense/payroll/loan/advance/
+loan_repayment — `advance_deduction` is skipped, no real cash moves), a
+`harvests` row, a `harvest_sales` row, and a `supplier_purchases` row
+(this last one fires **in addition to** the `transactions` push that
+already fires if some of it was paid immediately — see
+`services/supplier_payments.dart` — so a fully-paid-on-the-spot purchase
+currently sends two separate notifications; that's accepted as-is, not
+a bug). Firebase Cloud Messaging (FCM) is the delivery mechanism;
+Supabase is the trigger.
 
-**Flow:** `transactions` insert → Postgres trigger
-(`notify_new_transaction()`, migration
-`supabase_migration_push_notifications.sql`) → `pg_net.http_post()` to
-the `notify-transaction` Edge Function
+**Flow:** insert on one of those four tables → its own Postgres trigger
+(`notify_new_transaction()` / `notify_new_harvest()` /
+`notify_new_harvest_sale()` / `notify_new_supplier_purchase()`,
+migrations `supabase_migration_push_notifications.sql` +
+`supabase_migration_push_notifications_extended.sql`) → each trigger
+builds its own ready-to-send `title`/`body` in SQL (money formatted via
+the shared `public.format_money(amount, currency)` helper; the harvest
+sale and supplier purchase triggers each join out to look up the
+customer/supplier name and, for a sale, the harvest's `#H<n>` code) →
+`pg_net.http_post()` to the `notify-transaction` Edge Function
 (`supabase/functions/notify-transaction/index.ts`), authenticated by a
 shared secret header (not a user JWT — the function has
-`verify_jwt: false` and checks the header itself) → the function reads
-every *other* user's rows from `device_tokens`, gets an FCM v1 OAuth
-access token from the Firebase service account, and POSTs one push per
-device. A push whose response says the token is unregistered/invalid
-gets that `device_tokens` row deleted, so stale devices clean
-themselves up over time.
+`verify_jwt: false` and checks the header itself) → the function is now
+a thin relay: it just reads every *other* user's rows from
+`device_tokens`, gets an FCM v1 OAuth access token from the Firebase
+service account, and POSTs one push per device with the trigger's
+title/body plus a `data` payload (`kind`, `id`, `title`, `body`, and
+`type` for a transaction) for the tapped-notification flow below. A push
+whose response says the token is unregistered/invalid gets that
+`device_tokens` row deleted, so stale devices clean themselves up over
+time. All four trigger functions (and `get_decrypted_secret`, below)
+have `execute` revoked from `anon`/`authenticated` — Postgres exposes
+even a trigger-only function to direct RPC calls by default, and none of
+these are meant to be called except by their own trigger.
+
+**Tapping a notification** opens `notification_detail_screen.dart`, a
+single screen shared by all four kinds — it renders straight from the
+notification's own `data` payload (no extra fetch), picking its icon,
+accent color (via `AppColors.forType()` for a transaction, fixed colors
+for the other three kinds) and section label from `data['kind']`.
+Getting there is three separate code paths in
+`services/push_notifications.dart`'s `setUpPushNotifications()`, since
+Android delivers a tap differently depending on what the app was doing:
+foreground (the local notification shown by
+`flutter_local_notifications` carries the data as its JSON-encoded
+`payload`, read back in `onDidReceiveNotificationResponse`), backgrounded
+(`FirebaseMessaging.onMessageOpenedApp`), and cold-start / terminated
+(`FirebaseMessaging.instance.getInitialMessage()`, checked once at
+startup and pushed after the first frame via
+`WidgetsBinding.instance.addPostFrameCallback`, so it doesn't race
+`AuthGate`'s own routing). All three funnel into the same
+`_openNotificationDetail()` helper, which pushes the detail screen via
+`main.dart`'s top-level `navigatorKey` — needed because a tap can arrive
+before any screen has a `BuildContext` ready (cold start) or from
+outside the widget tree entirely.
 
 **`device_tokens`** — one row per device registered for push (a user can
 have more than one, e.g. two phones), upserted by
@@ -789,8 +827,12 @@ lib/
 │                                     notifications" above) then Supabase
 │                                     init (autoRefreshToken on, for
 │                                     persistent login), MaterialApp,
-│                                     exposes the global `supabase` client.
-│                                     `home` is AuthGate, not LoginScreen.
+│                                     exposes the global `supabase` client
+│                                     and the top-level `navigatorKey`
+│                                     (lets a tapped push notification
+│                                     navigate without its own
+│                                     BuildContext). `home` is AuthGate,
+│                                     not LoginScreen.
 ├── firebase_options.dart          — this project's Firebase config
 │                                     (Android only), hand-generated from
 │                                     `android/app/google-services.json`.
@@ -867,11 +909,16 @@ lib/
 │                                     flow. Requests the
 │                                     `POST_NOTIFICATIONS` permission,
 │                                     upserts this device's FCM token into
-│                                     `device_tokens`, and shows a local
+│                                     `device_tokens`, shows a local
 │                                     notification for pushes that arrive
 │                                     while the app is already in the
 │                                     foreground (FCM only auto-displays
-│                                     one when backgrounded/terminated).
+│                                     one when backgrounded/terminated),
+│                                     and wires up all three
+│                                     tapped-notification paths
+│                                     (foreground/background/cold-start)
+│                                     to open notification_detail_screen.dart
+│                                     via the top-level `navigatorKey`.
 ├── screens/
 │   ├── auth_gate.dart             — the actual `home` widget. Renders
 │   │                                 DashboardScreen if a session is
@@ -1263,13 +1310,20 @@ lib/
 │   │                                 add_purchase_screen.dart (pre-selecting
 │   │                                 this supplier) and
 │   │                                 record_supplier_payment_screen.dart.
-│   └── record_supplier_payment_screen.dart — standalone form (date,
-│                                     amount, note) for paying a supplier
-│                                     down outside of a purchase; validates
-│                                     against what's currently owed to them
-│                                     and calls the same
-│                                     `recordSupplierPayment()` shared
-│                                     function. Admin only.
+│   ├── record_supplier_payment_screen.dart — standalone form (date,
+│   │                                 amount, note) for paying a supplier
+│   │                                 down outside of a purchase; validates
+│   │                                 against what's currently owed to them
+│   │                                 and calls the same
+│   │                                 `recordSupplierPayment()` shared
+│   │                                 function. Admin only.
+│   └── notification_detail_screen.dart — opened by tapping a push
+│                                     notification (see "Push
+│                                     notifications" above); renders
+│                                     entirely from the tapped
+│                                     notification's own data payload, no
+│                                     fetch. Shared by all four
+│                                     notification kinds.
 ```
 
 Dashboard and transaction log both independently fetch and sum
