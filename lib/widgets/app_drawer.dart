@@ -60,7 +60,7 @@ class AppDrawer extends StatelessWidget {
                 Expanded(
                   child: Text(
                     label,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14.5,
                       fontWeight: FontWeight.w500,
                       color: AppColors.ink,
@@ -218,6 +218,11 @@ class AppDrawer extends StatelessWidget {
           ),
 
           const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+            child: _ThemeModeToggle(),
+          ),
+          const Divider(height: 1),
           SafeArea(
             top: false,
             child: Padding(
@@ -227,7 +232,7 @@ class AppDrawer extends StatelessWidget {
                 child: InkWell(
                   onTap: () => _logout(context),
                   borderRadius: BorderRadius.circular(12),
-                  child: const Padding(
+                  child: Padding(
                     padding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                     child: Row(
                       children: [
@@ -253,6 +258,90 @@ class AppDrawer extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Three-way Light/Dark/System pill, mirroring CurrencyToggle's segmented
+/// style (lib/utils/currency.dart). Defaults to System until the user
+/// picks a side; the choice is persisted by AppThemeController.
+class _ThemeModeToggle extends StatelessWidget {
+  const _ThemeModeToggle();
+
+  static const _options = [
+    (ThemeMode.light, Icons.light_mode_outlined, 'Light'),
+    (ThemeMode.system, Icons.brightness_auto_outlined, 'System'),
+    (ThemeMode.dark, Icons.dark_mode_outlined, 'Dark'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: AppThemeController.instance,
+      builder: (context, _) {
+        final current = AppThemeController.instance.mode;
+        return Row(
+          children: [
+            for (final (mode, icon, label) in _options) ...[
+              if (mode != _options.first.$1) const SizedBox(width: 8),
+              Expanded(child: _segment(mode, icon, label, current)),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _segment(
+    ThemeMode mode,
+    IconData icon,
+    String label,
+    ThemeMode current,
+  ) {
+    final selected = mode == current;
+    return Material(
+      color: selected
+          ? AppColors.brandGreen.withValues(alpha: 0.10)
+          : AppColors.surface,
+      borderRadius: BorderRadius.circular(AppStyles.radiusField),
+      child: InkWell(
+        onTap: () => AppThemeController.instance.setMode(mode),
+        borderRadius: BorderRadius.circular(AppStyles.radiusField),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppStyles.radiusField),
+            border: Border.all(
+              color: selected
+                  ? AppColors.brandGreen.withValues(alpha: 0.45)
+                  : AppColors.hairline,
+              width: selected ? 1.6 : 1,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 17,
+                color: selected ? AppColors.brandGreen : AppColors.inkMuted,
+              ),
+              const SizedBox(height: 3),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  color: selected
+                      ? AppColors.brandGreen
+                      : AppColors.inkSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

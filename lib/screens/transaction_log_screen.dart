@@ -302,7 +302,7 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
         children: [
           Text(
             breakdown,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
               color: AppColors.inkSecondary,
               height: 1.3,
@@ -311,7 +311,7 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
           const SizedBox(height: 3),
           Text(
             dateText,
-            style: const TextStyle(fontSize: 12, color: AppColors.inkMuted),
+            style: TextStyle(fontSize: 12, color: AppColors.inkMuted),
           ),
         ],
       );
@@ -319,7 +319,7 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
 
     return Text(
       dateText,
-      style: const TextStyle(fontSize: 12, color: AppColors.inkMuted),
+      style: TextStyle(fontSize: 12, color: AppColors.inkMuted),
     );
   }
 
@@ -381,7 +381,7 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
                       decoration: InputDecoration(
                         hintText: 'Search fuel, fencing, water...',
                         isDense: true,
-                        prefixIcon: const Icon(
+                        prefixIcon: Icon(
                           Icons.search,
                           size: 20,
                           color: AppColors.inkMuted,
@@ -454,7 +454,7 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Row(
                       children: [
-                        const Text(
+                        Text(
                           'Totals in:',
                           style: TextStyle(
                             fontSize: 12,
@@ -600,7 +600,7 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
                                         children: [
                                           Text(
                                             _titleFor(t),
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 14.5,
                                               fontWeight: FontWeight.w600,
                                               color: AppColors.ink,
@@ -650,7 +650,7 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
                                                   borderRadius:
                                                       BorderRadius.circular(8),
                                                 ),
-                                                child: const Row(
+                                                child: Row(
                                                   mainAxisSize:
                                                       MainAxisSize.min,
                                                   children: [
@@ -705,7 +705,7 @@ class _TransactionLogScreenState extends State<TransactionLogScreen> {
               const SizedBox(width: 6),
               Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                   color: AppColors.inkSecondary,
@@ -837,7 +837,7 @@ class _EditTransactionSheetState extends State<_EditTransactionSheet> {
         bottom: MediaQuery.of(context).viewInsets.bottom,
       ),
       child: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: AppColors.canvas,
           borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
         ),
@@ -871,7 +871,7 @@ class _EditTransactionSheetState extends State<_EditTransactionSheet> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Edit transaction',
                           style: TextStyle(
                             fontSize: 17,
@@ -882,7 +882,7 @@ class _EditTransactionSheetState extends State<_EditTransactionSheet> {
                         const SizedBox(height: 2),
                         Text(
                           subtitle,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12.5,
                             color: AppColors.inkMuted,
                           ),
@@ -929,14 +929,14 @@ class _EditTransactionSheetState extends State<_EditTransactionSheet> {
                         Expanded(
                           child: Text(
                             _dateFormat.format(_selectedDate),
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w600,
                               color: AppColors.ink,
                             ),
                           ),
                         ),
-                        const Icon(
+                        Icon(
                           Icons.keyboard_arrow_down,
                           size: 20,
                           color: AppColors.inkMuted,
@@ -963,14 +963,14 @@ class _EditTransactionSheetState extends State<_EditTransactionSheet> {
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
                   color: AppColors.ink,
                 ),
                 decoration: InputDecoration(
                   prefixText: '${_selectedCurrency.symbol} ',
-                  prefixStyle: const TextStyle(
+                  prefixStyle: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
                     color: AppColors.ink,

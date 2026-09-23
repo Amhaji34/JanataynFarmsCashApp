@@ -211,7 +211,7 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
                             const SizedBox(width: 12),
                             Text(
                               hasDebt ? 'You owe' : 'Balance settled',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                                 color: AppColors.inkSecondary,
@@ -225,7 +225,7 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
                             for (final c in AppCurrency.values)
                               c: (_owed[c] ?? 0).abs(),
                           },
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 28,
                             fontWeight: FontWeight.w800,
                             letterSpacing: -0.6,
@@ -238,7 +238,7 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
                           const SizedBox(height: 6),
                           Text(
                             widget.supplierPhone!,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12.5,
                               color: AppColors.inkMuted,
                             ),
@@ -306,7 +306,7 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
                                   children: [
                                     Text(
                                       e.label,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 14.5,
                                         fontWeight: FontWeight.w600,
                                         color: AppColors.ink,
@@ -315,7 +315,7 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
                                     const SizedBox(height: 3),
                                     Text(
                                       e.subtitle,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 12,
                                         color: AppColors.inkMuted,
                                       ),
@@ -323,7 +323,7 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
                                     const SizedBox(height: 2),
                                     Text(
                                       _dateFormat.format(e.date),
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 11.5,
                                         color: AppColors.inkMuted,
                                       ),

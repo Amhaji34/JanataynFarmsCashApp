@@ -321,11 +321,11 @@ class _ReportScreenState extends State<ReportScreen> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppStyles.radiusField),
-        borderSide: const BorderSide(color: AppColors.hairline),
+        borderSide: BorderSide(color: AppColors.hairline),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppStyles.radiusField),
-        borderSide: const BorderSide(color: AppColors.hairline),
+        borderSide: BorderSide(color: AppColors.hairline),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppStyles.radiusField),
@@ -363,7 +363,7 @@ class _ReportScreenState extends State<ReportScreen> {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14.5,
                         fontWeight: FontWeight.w700,
                         color: AppColors.ink,
@@ -372,7 +372,7 @@ class _ReportScreenState extends State<ReportScreen> {
                     const SizedBox(height: 1),
                     Text(
                       subtitle,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11.5,
                         color: AppColors.inkMuted,
                       ),
@@ -391,7 +391,7 @@ class _ReportScreenState extends State<ReportScreen> {
 
   Widget _barChart(List<MapEntry<String, double>> data) {
     if (data.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           'No data for this range.',
           style: TextStyle(color: AppColors.inkMuted, fontSize: 13),
@@ -408,7 +408,7 @@ class _ReportScreenState extends State<ReportScreen> {
           show: true,
           drawVerticalLine: false,
           horizontalInterval: maxValue == 0 ? 1 : maxValue / 2,
-          getDrawingHorizontalLine: (value) => const FlLine(
+          getDrawingHorizontalLine: (value) => FlLine(
             color: AppColors.hairline,
             strokeWidth: 1,
             dashArray: [4, 4],
@@ -450,7 +450,7 @@ class _ReportScreenState extends State<ReportScreen> {
                   padding: const EdgeInsets.only(top: 8),
                   child: Text(
                     data[index].key,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 10.5,
                       fontWeight: FontWeight.w600,
                       color: AppColors.inkMuted,
@@ -695,7 +695,7 @@ class _ReportScreenState extends State<ReportScreen> {
                           children: [
                             Text(
                               e.key,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
                                 color: AppColors.inkSecondary,
@@ -788,7 +788,7 @@ class _ReportScreenState extends State<ReportScreen> {
                                       children: [
                                         Text(
                                           _rowTitle(t),
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 14.5,
                                             fontWeight: FontWeight.w600,
                                             color: AppColors.ink,
@@ -797,7 +797,7 @@ class _ReportScreenState extends State<ReportScreen> {
                                         const SizedBox(height: 3),
                                         Text(
                                           _dateFormat.format(date),
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 12,
                                             color: AppColors.inkMuted,
                                           ),

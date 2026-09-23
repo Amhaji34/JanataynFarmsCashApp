@@ -179,14 +179,14 @@ class _RecordPaymentScreenState extends State<RecordPaymentScreen> {
                     Expanded(
                       child: Text(
                         _dateFormat.format(_selectedDate),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
                           color: AppColors.ink,
                         ),
                       ),
                     ),
-                    const Icon(
+                    Icon(
                       Icons.keyboard_arrow_down,
                       size: 20,
                       color: AppColors.inkMuted,
@@ -207,7 +207,7 @@ class _RecordPaymentScreenState extends State<RecordPaymentScreen> {
             decoration: InputDecoration(
               hintText: '${_selectedCurrency.symbol}0',
               prefixText: '${_selectedCurrency.symbol} ',
-              prefixStyle: const TextStyle(
+              prefixStyle: TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.w700,
                 color: AppColors.ink,

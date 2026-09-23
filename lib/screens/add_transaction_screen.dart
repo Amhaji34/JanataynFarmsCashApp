@@ -339,11 +339,11 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       ),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppStyles.radiusField),
-        borderSide: const BorderSide(color: AppColors.hairline),
+        borderSide: BorderSide(color: AppColors.hairline),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppStyles.radiusField),
-        borderSide: const BorderSide(color: AppColors.hairline),
+        borderSide: BorderSide(color: AppColors.hairline),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppStyles.radiusField),
@@ -354,7 +354,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       ),
       disabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppStyles.radiusField),
-        borderSide: const BorderSide(color: AppColors.hairline),
+        borderSide: BorderSide(color: AppColors.hairline),
       ),
     );
   }
@@ -538,7 +538,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                             : Colors.orange.shade800,
                       ),
                       const SizedBox(width: 8),
-                      const Text(
+                      Text(
                         'Allocated',
                         style: TextStyle(
                           fontSize: 13,
@@ -632,14 +632,14 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               Expanded(
                 child: Text(
                   _dateFormat.format(_selectedDate),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: AppColors.ink,
                   ),
                 ),
               ),
-              const Icon(
+              Icon(
                 Icons.keyboard_arrow_down,
                 size: 20,
                 color: AppColors.inkMuted,
@@ -866,11 +866,11 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                     isDense: true,
                     contentPadding: EdgeInsets.symmetric(vertical: 12),
                   ),
-                  hint: const Text(
+                  hint: Text(
                     'Category',
                     style: TextStyle(color: AppColors.inkMuted, fontSize: 15),
                   ),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: AppColors.ink,
@@ -895,7 +895,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                     isDense: true,
                     contentPadding: EdgeInsets.symmetric(vertical: 12),
                   ),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                     color: AppColors.ink,
@@ -915,20 +915,13 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
           Row(
             children: [
               const SizedBox(width: 40),
-              const Icon(
-                Icons.notes_outlined,
-                size: 15,
-                color: AppColors.inkMuted,
-              ),
+              Icon(Icons.notes_outlined, size: 15, color: AppColors.inkMuted),
               const SizedBox(width: 6),
               Expanded(
                 child: TextField(
                   controller: item.noteController,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: AppColors.inkSecondary,
-                  ),
-                  decoration: const InputDecoration(
+                  style: TextStyle(fontSize: 13, color: AppColors.inkSecondary),
+                  decoration: InputDecoration(
                     hintText: 'Note for this invoice (optional)',
                     hintStyle: TextStyle(
                       fontSize: 13,

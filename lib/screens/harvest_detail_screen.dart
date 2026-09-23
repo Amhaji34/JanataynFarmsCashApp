@@ -130,7 +130,7 @@ class _HarvestDetailScreenState extends State<HarvestDetailScreen> {
                             Expanded(
                               child: Text(
                                 fullySold ? 'Fully sold' : 'In stock',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,
                                   color: AppColors.inkSecondary,
@@ -171,7 +171,7 @@ class _HarvestDetailScreenState extends State<HarvestDetailScreen> {
                           const SizedBox(height: 12),
                           Text(
                             widget.note!,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12.5,
                               color: AppColors.inkMuted,
                             ),
@@ -192,7 +192,7 @@ class _HarvestDetailScreenState extends State<HarvestDetailScreen> {
                             AppStyles.radiusField,
                           ),
                         ),
-                        child: const Text(
+                        child: Text(
                           'Fully sold — nothing left to sell',
                           textAlign: TextAlign.center,
                           style: TextStyle(
@@ -260,7 +260,7 @@ class _HarvestDetailScreenState extends State<HarvestDetailScreen> {
                                   children: [
                                     Text(
                                       customerName,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 14.5,
                                         fontWeight: FontWeight.w600,
                                         color: AppColors.ink,
@@ -272,7 +272,7 @@ class _HarvestDetailScreenState extends State<HarvestDetailScreen> {
                                           ? '${kg.toStringAsFixed(1)} kg @ ${formatMoney(pricePerKg, currency)}/kg '
                                                 '(−${formatMoney(transportFee, currency)} transport)'
                                           : '${kg.toStringAsFixed(1)} kg @ ${formatMoney(pricePerKg, currency)}/kg',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 12,
                                         color: AppColors.inkMuted,
                                       ),
@@ -280,7 +280,7 @@ class _HarvestDetailScreenState extends State<HarvestDetailScreen> {
                                     const SizedBox(height: 2),
                                     Text(
                                       _dateFormat.format(date),
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 11.5,
                                         color: AppColors.inkMuted,
                                       ),
@@ -312,10 +312,7 @@ class _HarvestDetailScreenState extends State<HarvestDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
-        ),
+        Text(label, style: TextStyle(fontSize: 11, color: AppColors.inkMuted)),
         const SizedBox(height: 3),
         Text(
           '${kg.toStringAsFixed(1)} kg',

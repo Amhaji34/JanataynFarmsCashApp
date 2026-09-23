@@ -347,7 +347,7 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                           label: 'Owed by partners',
                           valueWidget: DualCurrencyStat(
                             amounts: _outstandingLoans,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w700,
                               color: AppColors.ink,
@@ -369,7 +369,7 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                           label: 'Owed by staff',
                           valueWidget: DualCurrencyStat(
                             amounts: _outstandingAdvances,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w700,
                               color: AppColors.ink,
@@ -395,7 +395,7 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                           label: 'Owed by customers',
                           valueWidget: DualCurrencyStat(
                             amounts: _owedByCustomers,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w700,
                               color: AppColors.ink,
@@ -417,7 +417,7 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                           label: 'This month\'s cash out',
                           valueWidget: DualCurrencyStat(
                             amounts: _monthCashOut,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w700,
                               color: AppColors.ink,
@@ -442,7 +442,7 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                     'THIS MONTH',
                     trailing: Text(
                       DateFormat('MMMM yyyy').format(DateTime.now()),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         color: AppColors.inkMuted,
                         fontWeight: FontWeight.w500,
@@ -554,7 +554,7 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
                           iconSize: 17,
                         ),
                         const SizedBox(width: 12),
-                        const Expanded(
+                        Expanded(
                           child: Text(
                             'View all transactions',
                             style: TextStyle(
@@ -586,14 +586,14 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Welcome back',
                 style: TextStyle(fontSize: 12.5, color: AppColors.inkMuted),
               ),
               const SizedBox(height: 2),
               Text(
                 _name ?? '',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 19,
                   fontWeight: FontWeight.w700,
                   color: AppColors.ink,
@@ -762,7 +762,7 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14.5,
                 color: AppColors.ink,
                 fontWeight: FontWeight.w500,
@@ -772,7 +772,7 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
           DualCurrencyStat(
             amounts: amounts,
             crossAxisAlignment: CrossAxisAlignment.end,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 14.5,
               fontWeight: FontWeight.w700,
               color: AppColors.ink,
@@ -780,11 +780,7 @@ class _DashboardScreenState extends State<DashboardScreen> with RouteAware {
           ),
           if (onTap != null) ...[
             const SizedBox(width: 6),
-            const Icon(
-              Icons.chevron_right,
-              size: 18,
-              color: AppColors.inkMuted,
-            ),
+            Icon(Icons.chevron_right, size: 18, color: AppColors.inkMuted),
           ],
         ],
       ),

@@ -830,13 +830,21 @@ lib/
 │                                     notifications — see "Push
 │                                     notifications" above) then Supabase
 │                                     init (autoRefreshToken on, for
-│                                     persistent login), MaterialApp,
-│                                     exposes the global `supabase` client
-│                                     and the top-level `navigatorKey`
-│                                     (lets a tapped push notification
-│                                     navigate without its own
-│                                     BuildContext). `home` is AuthGate,
-│                                     not LoginScreen.
+│                                     persistent login). `MyApp` is a
+│                                     `StatefulWidget` (not stateless)
+│                                     specifically to drive dark theme —
+│                                     see "Dark theme" above — listening
+│                                     to `AppThemeController` and mixing
+│                                     in `WidgetsBindingObserver` for OS
+│                                     brightness changes; loads the
+│                                     persisted theme choice
+│                                     (`AppThemeController.instance.
+│                                     load()`) before `runApp()`. Exposes
+│                                     the global `supabase` client and the
+│                                     top-level `navigatorKey` (lets a
+│                                     tapped push notification navigate
+│                                     without its own BuildContext).
+│                                     `home` is AuthGate, not LoginScreen.
 ├── firebase_options.dart          — this project's Firebase config
 │                                     (Android only), hand-generated from
 │                                     `android/app/google-services.json`.
@@ -844,6 +852,12 @@ lib/
 │                                     notifications" above for why this is
 │                                     not the same as the Firebase service
 │                                     account secret.
+├── theme/
+│   └── app_theme.dart              — `AppColors`, `AppIcons`,
+│                                     `AppStyles`, `AppTheme`, and
+│                                     `AppThemeController` — see "Dark
+│                                     theme" above for the light/dark
+│                                     design in full.
 ├── utils/
 │   └── currency.dart               — `AppCurrency` enum (USD/SLSH),
 │                                     `formatMoney()`, `CurrencyToggle`,
@@ -881,6 +895,14 @@ lib/
 │                                     that screen is entirely about the 4
 │                                     funding accounts now (see the
 │                                     settings_screen.dart entry below).
+│                                     Below the nav list, above Log out,
+│                                     `_ThemeModeToggle` is a
+│                                     Light/System/Dark segmented pill
+│                                     (same visual language as
+│                                     `CurrencyToggle`) wrapped in its own
+│                                     `ListenableBuilder` on
+│                                     `AppThemeController` — see "Dark
+│                                     theme" above.
 ├── services/
 │   ├── customer_payments.dart     — `recordCustomerPayment()`, the shared
 │   │                                 function used by both
@@ -1381,6 +1403,46 @@ a raw hex is drifting from the system.
   errors (never bare red text), `SectionLabel` for uppercase group
   headers, `BrandLogo` for the logo on its cream plate.
 
+### Dark theme
+
+Seven tokens — `canvas`, `surface`, `hairline`, `fieldFill`, `ink`,
+`inkSecondary`, `inkMuted` — flip between light and dark; every other
+`AppColors` value (brand colors, the six transaction-type accents,
+`danger`, the decorative name palette) is the same in both, since
+they're already vivid enough to read on a dark canvas. Those seven are
+`static Color get`s backed by a private `AppColors._dark` flag, **not**
+`static const` like the rest of the file — a runtime-switchable color
+can never be a Dart compile-time constant. This is the one place this
+app's "just call `AppColors.x`, no `BuildContext` needed" convention
+(see the note atop `AppColors` in `app_theme.dart`) has a real cost: any
+widget using one of these seven inside a `const` constructor needs that
+`const` removed, which touched roughly 165 call sites across 30 files
+when this was added — if you add an eighth theme-aware token later,
+expect a similar (if smaller) sweep, not just a two-line palette edit.
+
+`AppTheme.light`/`AppTheme.dark` don't read the ambient `AppColors`
+getters for this reason — building both at once from a shared mutable
+flag would let whichever one was built last clobber the other. Instead
+they each pull from private `_LightTokens`/`_DarkTokens` classes (the
+literal, always-const values) directly, so both `ThemeData`s stay fully
+`const`-safe regardless of the app's current mode.
+
+`AppThemeController` (also in `app_theme.dart`) owns the current
+`ThemeMode` (light/dark/system — default **system**), persists it via
+`shared_preferences`, and is what actually flips `AppColors._dark` (in
+`_applyBrightness()`) before notifying listeners. `main.dart`'s `MyApp`
+is a `StatefulWidget` specifically to drive this: it listens to the
+controller (any `setMode()` call triggers `setState`, so every
+`AppColors.x` getter re-resolves on the next build) and mixes in
+`WidgetsBindingObserver` to catch `didChangePlatformBrightness()` — the
+OS flipping light/dark while the app is open — calling
+`AppThemeController.instance.refreshSystemBrightness()`, which only
+acts (and only rebuilds) when the mode is actually `system`. The
+three-way toggle lives in `app_drawer.dart`'s `_ThemeModeToggle` (same
+segmented-pill visual language as `CurrencyToggle`), wrapped in its own
+`ListenableBuilder` so only that pill rebuilds when you tap it, not the
+whole drawer.
+
 ## Conventions to preserve when adding features
 
 0. New screens should be built from `AppTheme` + `lib/widgets/app_ui.dart`
@@ -1409,3 +1471,9 @@ a raw hex is drifting from the system.
    the user picked via `CurrencyToggle`, not a hardcoded default) and
    every aggregate/sum must group by currency — never add a USD amount
    to a SLSH amount. See "Currencies" above.
+6. If a new screen's `const` widget uses one of the seven theme-aware
+   `AppColors` tokens (`canvas`/`surface`/`hairline`/`fieldFill`/`ink`/
+   `inkSecondary`/`inkMuted`), drop the `const` — see "Dark theme"
+   above. `flutter analyze` catches every miss immediately
+   (`invalid_constant`), so this is safe to find after the fact rather
+   than tracking by hand while writing the screen.

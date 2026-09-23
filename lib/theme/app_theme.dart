@@ -1,14 +1,57 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// Literal color values for one brightness - kept separate from
+/// [AppColors] so [AppTheme.light]/[AppTheme.dark] can each build a
+/// fully `const`-safe ThemeData from a fixed palette, instead of the
+/// ambient (non-const, runtime-switchable) [AppColors] getters, which
+/// would otherwise bake whichever mode happened to be active *when the
+/// ThemeData was constructed* into both themes at once.
+class _LightTokens {
+  _LightTokens._();
+  static const canvas = Color(0xFFF5F6F1);
+  static const surface = Colors.white;
+  static const hairline = Color(0xFFE7E8E1);
+  static const fieldFill = Colors.white;
+  static const ink = Color(0xFF16181A);
+  static const inkSecondary = Color(0xFF5E635F);
+  static const inkMuted = Color(0xFF8B8F8A);
+}
+
+class _DarkTokens {
+  _DarkTokens._();
+  static const canvas = Color(0xFF141613);
+  static const surface = Color(0xFF1E211D);
+  static const hairline = Color(0xFF32362F);
+  static const fieldFill = Color(0xFF1E211D);
+  static const ink = Color(0xFFF1F2EE);
+  static const inkSecondary = Color(0xFFAEB3A9);
+  static const inkMuted = Color(0xFF7C8177);
+}
 
 /// Central design tokens for the app.
 ///
 /// Colors are drawn from the Jannatein Agro Business logo — the deep forest
 /// green of the wordmark, the tractor red, and the navy of the wheels — so the
 /// UI reads as one brand family rather than default Material blue.
+///
+/// The seven "surface"/"ink" tokens below are the only ones that differ
+/// between light and dark — brand and semantic-transaction colors stay
+/// the same in both (they're already vivid enough to read on a dark
+/// canvas). [AppThemeController] flips [_dark] whenever the effective
+/// brightness changes and triggers a full app rebuild, so every widget
+/// re-reads these getters during that rebuild. Because a
+/// runtime-switchable color can never be a Dart `const`, any widget
+/// using one of these seven inside a `const` constructor needs that
+/// `const` removed — everything else in this file (brand/semantic
+/// colors) is untouched and still `const` everywhere it's used.
 class AppColors {
   AppColors._();
 
-  // ---- Brand ----------------------------------------------------------
+  static bool _dark = false;
+
+  // ---- Brand ------------------------------------------------------------
   static const brandGreen = Color(0xFF1B5E3A);
   static const brandGreenDark = Color(0xFF134026);
   static const brandGreenDeep = Color(0xFF0F3D25);
@@ -17,17 +60,22 @@ class AppColors {
   static const brandNavy = Color(0xFF1E3A5F);
   static const cream = Color(0xFFEEEFEA);
 
-  // ---- Surfaces -------------------------------------------------------
-  /// Page background — a soft, very slightly warm off-white.
-  static const canvas = Color(0xFFF5F6F1);
-  static const surface = Colors.white;
-  static const hairline = Color(0xFFE7E8E1);
-  static const fieldFill = Colors.white;
+  // ---- Surfaces (theme-aware) --------------------------------------------
+  /// Page background.
+  static Color get canvas => _dark ? _DarkTokens.canvas : _LightTokens.canvas;
+  static Color get surface =>
+      _dark ? _DarkTokens.surface : _LightTokens.surface;
+  static Color get hairline =>
+      _dark ? _DarkTokens.hairline : _LightTokens.hairline;
+  static Color get fieldFill =>
+      _dark ? _DarkTokens.fieldFill : _LightTokens.fieldFill;
 
-  // ---- Ink ------------------------------------------------------------
-  static const ink = Color(0xFF16181A);
-  static const inkSecondary = Color(0xFF5E635F);
-  static const inkMuted = Color(0xFF8B8F8A);
+  // ---- Ink (theme-aware) --------------------------------------------------
+  static Color get ink => _dark ? _DarkTokens.ink : _LightTokens.ink;
+  static Color get inkSecondary =>
+      _dark ? _DarkTokens.inkSecondary : _LightTokens.inkSecondary;
+  static Color get inkMuted =>
+      _dark ? _DarkTokens.inkMuted : _LightTokens.inkMuted;
 
   // ---- Transaction type accents --------------------------------------
   // Same semantic mapping the app has always used, just tuned to sit
@@ -134,13 +182,17 @@ class AppStyles {
   static const radiusPill = 999.0;
 
   /// Soft, low-contrast lift. Deliberately subtle — depth, not drop shadow.
-  static List<BoxShadow> get softShadow => [
-    BoxShadow(
-      color: Colors.black.withValues(alpha: 0.05),
-      blurRadius: 14,
-      offset: const Offset(0, 4),
-    ),
-  ];
+  /// A black shadow does nothing useful on a dark canvas, so dark mode
+  /// relies on the hairline border alone for card separation instead.
+  static List<BoxShadow> get softShadow => AppColors._dark
+      ? const []
+      : [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ];
 
   static BoxDecoration get card => BoxDecoration(
     color: AppColors.surface,
@@ -162,28 +214,43 @@ class AppStyles {
 class AppTheme {
   AppTheme._();
 
-  static ThemeData get light {
+  static ThemeData get light => _build(Brightness.light);
+  static ThemeData get dark => _build(Brightness.dark);
+
+  static ThemeData _build(Brightness brightness) {
+    final isDark = brightness == Brightness.dark;
+    final canvas = isDark ? _DarkTokens.canvas : _LightTokens.canvas;
+    final surface = isDark ? _DarkTokens.surface : _LightTokens.surface;
+    final hairline = isDark ? _DarkTokens.hairline : _LightTokens.hairline;
+    final fieldFill = isDark ? _DarkTokens.fieldFill : _LightTokens.fieldFill;
+    final ink = isDark ? _DarkTokens.ink : _LightTokens.ink;
+    final inkSecondary = isDark
+        ? _DarkTokens.inkSecondary
+        : _LightTokens.inkSecondary;
+    final inkMuted = isDark ? _DarkTokens.inkMuted : _LightTokens.inkMuted;
+
     final scheme = ColorScheme.fromSeed(
       seedColor: AppColors.brandGreen,
       primary: AppColors.brandGreen,
-      brightness: Brightness.light,
-    ).copyWith(surface: AppColors.surface, error: AppColors.danger);
+      brightness: brightness,
+    ).copyWith(surface: surface, error: AppColors.danger, onSurface: ink);
 
     return ThemeData(
       useMaterial3: true,
+      brightness: brightness,
       colorScheme: scheme,
-      scaffoldBackgroundColor: AppColors.canvas,
+      scaffoldBackgroundColor: canvas,
       fontFamily: null,
 
-      appBarTheme: const AppBarTheme(
-        backgroundColor: AppColors.canvas,
+      appBarTheme: AppBarTheme(
+        backgroundColor: canvas,
         surfaceTintColor: Colors.transparent,
-        foregroundColor: AppColors.ink,
+        foregroundColor: ink,
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
         titleTextStyle: TextStyle(
-          color: AppColors.ink,
+          color: ink,
           fontSize: 19,
           fontWeight: FontWeight.w700,
           letterSpacing: -0.2,
@@ -192,20 +259,20 @@ class AppTheme {
 
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: AppColors.fieldFill,
+        fillColor: fieldFill,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
           vertical: 14,
         ),
-        hintStyle: const TextStyle(color: AppColors.inkMuted, fontSize: 14),
-        labelStyle: const TextStyle(color: AppColors.inkSecondary),
+        hintStyle: TextStyle(color: inkMuted, fontSize: 14),
+        labelStyle: TextStyle(color: inkSecondary),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppStyles.radiusField),
-          borderSide: const BorderSide(color: AppColors.hairline),
+          borderSide: BorderSide(color: hairline),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppStyles.radiusField),
-          borderSide: const BorderSide(color: AppColors.hairline),
+          borderSide: BorderSide(color: hairline),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppStyles.radiusField),
@@ -216,7 +283,7 @@ class AppTheme {
         ),
         disabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppStyles.radiusField),
-          borderSide: const BorderSide(color: AppColors.hairline),
+          borderSide: BorderSide(color: hairline),
         ),
       ),
 
@@ -224,7 +291,9 @@ class AppTheme {
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.brandGreen,
           foregroundColor: Colors.white,
-          disabledBackgroundColor: const Color(0xFFC9CEC8),
+          disabledBackgroundColor: isDark
+              ? const Color(0xFF3A3F37)
+              : const Color(0xFFC9CEC8),
           disabledForegroundColor: Colors.white,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
@@ -237,15 +306,15 @@ class AppTheme {
 
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: AppColors.brandGreen,
+          foregroundColor: AppColors.brandGreenLight,
           textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
         ),
       ),
 
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.inkSecondary,
-          side: const BorderSide(color: AppColors.hairline),
+          foregroundColor: inkSecondary,
+          side: BorderSide(color: hairline),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppStyles.radiusField),
@@ -260,13 +329,13 @@ class AppTheme {
       ),
 
       chipTheme: ChipThemeData(
-        backgroundColor: AppColors.surface,
+        backgroundColor: surface,
         selectedColor: AppColors.brandGreen,
-        side: const BorderSide(color: AppColors.hairline),
-        labelStyle: const TextStyle(
+        side: BorderSide(color: hairline),
+        labelStyle: TextStyle(
           fontSize: 13,
           fontWeight: FontWeight.w600,
-          color: AppColors.inkSecondary,
+          color: inkSecondary,
         ),
         secondaryLabelStyle: const TextStyle(
           fontSize: 13,
@@ -278,20 +347,77 @@ class AppTheme {
         shape: const StadiumBorder(),
       ),
 
-      dividerTheme: const DividerThemeData(
-        color: AppColors.hairline,
-        thickness: 1,
-        space: 1,
-      ),
+      dividerTheme: DividerThemeData(color: hairline, thickness: 1, space: 1),
 
       progressIndicatorTheme: const ProgressIndicatorThemeData(
         color: AppColors.brandGreen,
       ),
 
-      listTileTheme: const ListTileThemeData(
-        iconColor: AppColors.inkSecondary,
-        textColor: AppColors.ink,
-      ),
+      listTileTheme: ListTileThemeData(iconColor: inkSecondary, textColor: ink),
     );
+  }
+}
+
+/// Controls light/dark/system and persists the choice. `AppColors`'
+/// theme-aware getters read [AppColors._dark] directly (updated by this
+/// controller), so every widget that reads them during a rebuild gets
+/// the right color — see the note on [AppColors] for why that can't be
+/// a `const`-compatible `InheritedWidget`/`Theme.of(context)` lookup
+/// given how pervasively this app's screens reference `AppColors.x`
+/// with no `BuildContext` at hand.
+class AppThemeController extends ChangeNotifier {
+  AppThemeController._();
+  static final instance = AppThemeController._();
+
+  static const _prefsKey = 'theme_mode';
+
+  ThemeMode _mode = ThemeMode.system;
+  ThemeMode get mode => _mode;
+
+  /// Loads the persisted choice (defaults to "system") and applies it.
+  /// Call once, before the first frame.
+  Future<void> load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString(_prefsKey);
+      _mode = ThemeMode.values.firstWhere(
+        (m) => m.name == saved,
+        orElse: () => ThemeMode.system,
+      );
+    } catch (_) {
+      _mode = ThemeMode.system;
+    }
+    _applyBrightness();
+  }
+
+  Future<void> setMode(ThemeMode mode) async {
+    _mode = mode;
+    _applyBrightness();
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefsKey, mode.name);
+    } catch (_) {
+      // Best-effort: worst case the choice doesn't survive a restart.
+    }
+  }
+
+  /// Re-resolves brightness when in "system" mode and the OS brightness
+  /// changes - see main.dart's WidgetsBindingObserver, which calls this.
+  void refreshSystemBrightness() {
+    if (_mode != ThemeMode.system) return;
+    _applyBrightness();
+    notifyListeners();
+  }
+
+  void _applyBrightness() {
+    final dark = switch (_mode) {
+      ThemeMode.dark => true,
+      ThemeMode.light => false,
+      ThemeMode.system =>
+        SchedulerBinding.instance.platformDispatcher.platformBrightness ==
+            Brightness.dark,
+    };
+    AppColors._dark = dark;
   }
 }

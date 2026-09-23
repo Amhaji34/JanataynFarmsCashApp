@@ -383,7 +383,7 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
                     children: [
                       Text(
                         name,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
                           color: AppColors.ink,
@@ -392,7 +392,7 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
                       const SizedBox(height: 2),
                       Text(
                         '${formatMoney(balance, _selectedCurrency)} available',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
                           color: AppColors.inkMuted,
                         ),
@@ -493,14 +493,14 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
                           Expanded(
                             child: Text(
                               _dateFormat.format(_selectedDate),
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
                                 color: AppColors.ink,
                               ),
                             ),
                           ),
-                          const Icon(
+                          Icon(
                             Icons.keyboard_arrow_down,
                             size: 20,
                             color: AppColors.inkMuted,
@@ -526,7 +526,7 @@ class _TransferFundsScreenState extends State<TransferFundsScreen> {
                   decoration: InputDecoration(
                     hintText: '${_selectedCurrency.symbol}0',
                     prefixText: '${_selectedCurrency.symbol} ',
-                    prefixStyle: const TextStyle(
+                    prefixStyle: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.w700,
                       color: AppColors.ink,

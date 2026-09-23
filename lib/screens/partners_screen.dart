@@ -133,7 +133,7 @@ class _PartnersScreenState extends State<PartnersScreen> {
                         child: TextField(
                           controller: _nameController,
                           textCapitalization: TextCapitalization.words,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             hintText: 'Partner name',
                             isDense: true,
                             prefixIcon: Icon(
@@ -179,7 +179,7 @@ class _PartnersScreenState extends State<PartnersScreen> {
                   'PARTNERS',
                   trailing: Text(
                     '${_partners.length}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                       color: AppColors.inkMuted,
@@ -222,7 +222,7 @@ class _PartnersScreenState extends State<PartnersScreen> {
                               Expanded(
                                 child: Text(
                                   name,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.w600,
                                     color: AppColors.ink,

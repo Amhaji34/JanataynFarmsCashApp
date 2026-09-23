@@ -249,7 +249,7 @@ class _ExchangeScreenState extends State<ExchangeScreen> {
                           Expanded(
                             child: Text(
                               name,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
                                 color: AppColors.ink,
@@ -347,7 +347,7 @@ class _ExchangeScreenState extends State<ExchangeScreen> {
                   decoration: InputDecoration(
                     hintText: '${_fromCurrency.symbol}0',
                     prefixText: '${_fromCurrency.symbol} ',
-                    prefixStyle: const TextStyle(
+                    prefixStyle: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.w700,
                       color: AppColors.ink,
@@ -370,7 +370,7 @@ class _ExchangeScreenState extends State<ExchangeScreen> {
                   decoration: InputDecoration(
                     hintText: '${_toCurrency.symbol}0',
                     prefixText: '${_toCurrency.symbol} ',
-                    prefixStyle: const TextStyle(
+                    prefixStyle: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.w700,
                       color: AppColors.ink,
@@ -409,14 +409,14 @@ class _ExchangeScreenState extends State<ExchangeScreen> {
                           Expanded(
                             child: Text(
                               _dateFormat.format(_selectedDate),
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
                                 color: AppColors.ink,
                               ),
                             ),
                           ),
-                          const Icon(
+                          Icon(
                             Icons.keyboard_arrow_down,
                             size: 20,
                             color: AppColors.inkMuted,

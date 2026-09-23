@@ -164,7 +164,7 @@ class _PartnerDetailScreenState extends State<PartnerDetailScreen> {
                               hasDebt
                                   ? 'Owes (outstanding loan)'
                                   : 'Loan settled',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                                 color: AppColors.inkSecondary,
@@ -178,7 +178,7 @@ class _PartnerDetailScreenState extends State<PartnerDetailScreen> {
                             for (final c in AppCurrency.values)
                               c: (_owed[c] ?? 0).abs(),
                           },
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 28,
                             fontWeight: FontWeight.w800,
                             letterSpacing: -0.6,
@@ -219,7 +219,7 @@ class _PartnerDetailScreenState extends State<PartnerDetailScreen> {
                                   children: [
                                     Text(
                                       e.label,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 14.5,
                                         fontWeight: FontWeight.w600,
                                         color: AppColors.ink,
@@ -230,7 +230,7 @@ class _PartnerDetailScreenState extends State<PartnerDetailScreen> {
                                     const SizedBox(height: 3),
                                     Text(
                                       _dateFormat.format(e.date),
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 11.5,
                                         color: AppColors.inkMuted,
                                       ),

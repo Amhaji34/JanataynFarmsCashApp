@@ -76,7 +76,7 @@ class NotificationDetailScreen extends StatelessWidget {
                   const SizedBox(width: 12),
                   Text(
                     _kindLabel.toUpperCase(),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w700,
                       color: AppColors.inkSecondary,
@@ -88,7 +88,7 @@ class NotificationDetailScreen extends StatelessWidget {
               const SizedBox(height: 18),
               Text(
                 title,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w800,
                   color: AppColors.ink,
@@ -98,7 +98,7 @@ class NotificationDetailScreen extends StatelessWidget {
                 const SizedBox(height: 8),
                 Text(
                   body,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14.5,
                     color: AppColors.inkSecondary,
                     height: 1.4,

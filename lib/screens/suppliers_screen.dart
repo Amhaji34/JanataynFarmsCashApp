@@ -195,7 +195,7 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                         TextField(
                           controller: _nameController,
                           textCapitalization: TextCapitalization.words,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             hintText: 'Supplier name',
                             isDense: true,
                             prefixIcon: Icon(
@@ -209,7 +209,7 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                         TextField(
                           controller: _phoneController,
                           keyboardType: TextInputType.phone,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             hintText: 'Phone (optional)',
                             isDense: true,
                             prefixIcon: Icon(
@@ -260,7 +260,7 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                         'ALL SUPPLIERS',
                         trailing: Text(
                           '${_suppliers.length}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
                             color: AppColors.inkMuted,
@@ -299,7 +299,7 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                                   children: [
                                     Text(
                                       name,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 15,
                                         fontWeight: FontWeight.w600,
                                         color: AppColors.ink,
@@ -309,7 +309,7 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                                       const SizedBox(height: 2),
                                       Text(
                                         phone,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 12,
                                           color: AppColors.inkMuted,
                                         ),

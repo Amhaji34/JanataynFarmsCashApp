@@ -422,7 +422,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                         const SizedBox(height: 12),
                         DualCurrencyStat(
                           amounts: _balances,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 28,
                             fontWeight: FontWeight.w800,
                             letterSpacing: -0.6,
@@ -536,7 +536,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                                   children: [
                                     Text(
                                       e.label,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 14.5,
                                         fontWeight: FontWeight.w600,
                                         color: AppColors.ink,
@@ -547,7 +547,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                                       const SizedBox(height: 3),
                                       Text(
                                         e.note!,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 12,
                                           color: AppColors.inkSecondary,
                                         ),
@@ -556,7 +556,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                                     const SizedBox(height: 3),
                                     Text(
                                       _dateFormat.format(e.date),
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 12,
                                         color: AppColors.inkMuted,
                                       ),
@@ -579,7 +579,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
                                   const SizedBox(height: 3),
                                   Text(
                                     'Bal: ${formatMoney(e.balanceAfter, e.currency)}',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 11.5,
                                       color: AppColors.inkMuted,
                                     ),
@@ -613,7 +613,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
           const SizedBox(height: 10),
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
               color: AppColors.inkSecondary,
               height: 1.25,

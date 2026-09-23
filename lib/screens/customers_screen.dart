@@ -171,7 +171,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                         TextField(
                           controller: _nameController,
                           textCapitalization: TextCapitalization.words,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             hintText: 'Customer name',
                             isDense: true,
                             prefixIcon: Icon(
@@ -185,7 +185,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                         TextField(
                           controller: _phoneController,
                           keyboardType: TextInputType.phone,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             hintText: 'Phone (optional)',
                             isDense: true,
                             prefixIcon: Icon(
@@ -236,7 +236,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                         'ALL CUSTOMERS',
                         trailing: Text(
                           '${_customers.length}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
                             color: AppColors.inkMuted,
@@ -275,7 +275,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                                   children: [
                                     Text(
                                       name,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 15,
                                         fontWeight: FontWeight.w600,
                                         color: AppColors.ink,
@@ -285,7 +285,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                                       const SizedBox(height: 2),
                                       Text(
                                         phone,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 12,
                                           color: AppColors.inkMuted,
                                         ),

@@ -104,14 +104,14 @@ class _AddHarvestScreenState extends State<AddHarvestScreen> {
                     Expanded(
                       child: Text(
                         _dateFormat.format(_selectedDate),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
                           color: AppColors.ink,
                         ),
                       ),
                     ),
-                    const Icon(
+                    Icon(
                       Icons.keyboard_arrow_down,
                       size: 20,
                       color: AppColors.inkMuted,

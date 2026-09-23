@@ -311,7 +311,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                               children: [
                                 Text(
                                   '$code · ${_dateFormat.format(date)}',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.w600,
                                     color: AppColors.ink,
@@ -320,7 +320,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                                 const SizedBox(height: 2),
                                 Text(
                                   '${remaining.toStringAsFixed(1)} kg remaining',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 12,
                                     color: AppColors.inkMuted,
                                   ),
@@ -424,7 +424,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
+                Text(
                   'Deducted from what the customer owes for this sale.',
                   style: TextStyle(fontSize: 12, color: AppColors.inkMuted),
                 ),
@@ -551,10 +551,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                   _upfront >= _customerOwes && _customerOwes > 0
                       ? 'Paid in full - nothing added to their balance.'
                       : 'Remaining ${formatMoney((_customerOwes - _upfront).clamp(0, double.infinity), _selectedCurrency)} will be added to their balance.',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.inkMuted,
-                  ),
+                  style: TextStyle(fontSize: 12, color: AppColors.inkMuted),
                 ),
                 const SizedBox(height: 20),
 
@@ -588,14 +585,14 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                           Expanded(
                             child: Text(
                               _dateFormat.format(_selectedDate),
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
                                 color: AppColors.ink,
                               ),
                             ),
                           ),
-                          const Icon(
+                          Icon(
                             Icons.keyboard_arrow_down,
                             size: 20,
                             color: AppColors.inkMuted,

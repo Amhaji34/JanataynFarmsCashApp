@@ -92,7 +92,7 @@ class _ExpenseCategoriesScreenState extends State<ExpenseCategoriesScreen> {
                         child: TextField(
                           controller: _nameController,
                           textCapitalization: TextCapitalization.words,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             hintText: 'e.g. Fuel',
                             isDense: true,
                             prefixIcon: Icon(
@@ -138,7 +138,7 @@ class _ExpenseCategoriesScreenState extends State<ExpenseCategoriesScreen> {
                   'ALL CATEGORIES',
                   trailing: Text(
                     '${_categories.length}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                       color: AppColors.inkMuted,
@@ -181,7 +181,7 @@ class _ExpenseCategoriesScreenState extends State<ExpenseCategoriesScreen> {
                               Expanded(
                                 child: Text(
                                   name,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.w500,
                                     color: AppColors.ink,

@@ -219,7 +219,7 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                                 iconSize: 17,
                               ),
                               const SizedBox(height: 10),
-                              const Text(
+                              Text(
                                 'Total sold',
                                 style: TextStyle(
                                   fontSize: 12,
@@ -230,7 +230,7 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                               const SizedBox(height: 3),
                               DualCurrencyStat(
                                 amounts: _totalValueByCurrency,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 17,
                                   fontWeight: FontWeight.w700,
                                   color: AppColors.ink,
@@ -256,7 +256,7 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                                 iconSize: 17,
                               ),
                               const SizedBox(height: 10),
-                              const Text(
+                              Text(
                                 'Total outstanding',
                                 style: TextStyle(
                                   fontSize: 12,
@@ -267,7 +267,7 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                               const SizedBox(height: 3),
                               DualCurrencyStat(
                                 amounts: _totalOutstandingByCurrency,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 17,
                                   fontWeight: FontWeight.w700,
                                   color: AppColors.ink,
@@ -324,7 +324,7 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                                   children: [
                                     Text(
                                       '#H${h['harvest_number']} · ${_dateFormat.format(date)}',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 14.5,
                                         fontWeight: FontWeight.w600,
                                         color: AppColors.ink,
@@ -334,7 +334,7 @@ class _HarvestsScreenState extends State<HarvestsScreen> {
                                     Text(
                                       '${kg.toStringAsFixed(1)} kg harvested · '
                                       '${sold.toStringAsFixed(1)} kg sold',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 12,
                                         color: AppColors.inkMuted,
                                       ),
@@ -399,7 +399,7 @@ class _StatValueWithSub extends StatelessWidget {
       children: [
         Text(
           value,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 17,
             fontWeight: FontWeight.w700,
             color: AppColors.ink,
@@ -410,7 +410,7 @@ class _StatValueWithSub extends StatelessWidget {
         const SizedBox(height: 2),
         Text(
           sub,
-          style: const TextStyle(fontSize: 11.5, color: AppColors.inkMuted),
+          style: TextStyle(fontSize: 11.5, color: AppColors.inkMuted),
           overflow: TextOverflow.ellipsis,
         ),
       ],

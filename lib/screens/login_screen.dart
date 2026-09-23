@@ -60,7 +60,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
@@ -98,7 +98,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const Text(
+                        Text(
                           'Welcome back',
                           style: TextStyle(
                             fontSize: 20,
@@ -108,7 +108,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        const Text(
+                        Text(
                           'Sign in to manage your farm cash',
                           style: TextStyle(
                             fontSize: 13,
@@ -120,7 +120,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         TextField(
                           controller: _usernameController,
                           textInputAction: TextInputAction.next,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             labelText: 'Username',
                             prefixIcon: Icon(
                               Icons.person_outline,
@@ -139,7 +139,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           },
                           decoration: InputDecoration(
                             labelText: 'Password',
-                            prefixIcon: const Icon(
+                            prefixIcon: Icon(
                               Icons.lock_outline,
                               size: 20,
                               color: AppColors.inkMuted,

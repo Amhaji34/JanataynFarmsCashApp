@@ -331,14 +331,14 @@ class _PayrollScreenState extends State<PayrollScreen> {
                                 Expanded(
                                   child: Text(
                                     _dateFormat.format(_selectedDate),
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w600,
                                       color: AppColors.ink,
                                     ),
                                   ),
                                 ),
-                                const Icon(
+                                Icon(
                                   Icons.keyboard_arrow_down,
                                   size: 20,
                                   color: AppColors.inkMuted,
@@ -452,7 +452,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
               Expanded(
                 child: Text(
                   line.name,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                     color: AppColors.ink,
@@ -527,11 +527,11 @@ class _PayrollScreenState extends State<PayrollScreen> {
                 ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(AppStyles.radiusField),
-                  borderSide: const BorderSide(color: AppColors.hairline),
+                  borderSide: BorderSide(color: AppColors.hairline),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(AppStyles.radiusField),
-                  borderSide: const BorderSide(color: AppColors.hairline),
+                  borderSide: BorderSide(color: AppColors.hairline),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(AppStyles.radiusField),
@@ -608,7 +608,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
         children: [
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
               color: AppColors.inkSecondary,

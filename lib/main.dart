@@ -34,6 +34,8 @@ Future<void> main() async {
     authOptions: const FlutterAuthClientOptions(autoRefreshToken: true),
   );
 
+  await AppThemeController.instance.load();
+
   runApp(const MyApp());
 }
 
@@ -50,8 +52,36 @@ final routeObserver = RouteObserver<PageRoute>();
 // (cold start) or from a background isolate.
 final navigatorKey = GlobalKey<NavigatorState>();
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    AppThemeController.instance.addListener(_onThemeChanged);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    AppThemeController.instance.removeListener(_onThemeChanged);
+    super.dispose();
+  }
+
+  void _onThemeChanged() => setState(() {});
+
+  @override
+  void didChangePlatformBrightness() {
+    // Only matters in ThemeMode.system - refreshSystemBrightness() no-ops
+    // (and skips the rebuild) otherwise.
+    AppThemeController.instance.refreshSystemBrightness();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -68,6 +98,8 @@ class MyApp extends StatelessWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: AppThemeController.instance.mode,
       home: const AuthGate(),
     );
   }

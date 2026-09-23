@@ -130,7 +130,7 @@ class SectionLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final label = Text(
       text,
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 12.5,
         fontWeight: FontWeight.w700,
         letterSpacing: 0.4,
@@ -186,7 +186,7 @@ class StatTile extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
               color: AppColors.inkSecondary,
               height: 1.25,
@@ -196,7 +196,7 @@ class StatTile extends StatelessWidget {
           valueWidget ??
               Text(
                 value!,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
                   color: AppColors.ink,
@@ -241,7 +241,7 @@ class EmptyState extends StatelessWidget {
             Text(
               title,
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
                 color: AppColors.ink,
@@ -252,7 +252,7 @@ class EmptyState extends StatelessWidget {
               Text(
                 subtitle!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
                   color: AppColors.inkMuted,
                   height: 1.4,
