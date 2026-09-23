@@ -958,11 +958,11 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 14),
             alignment: Alignment.center,
-            child: const Row(
+            child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(Icons.add, size: 17, color: AppColors.loan),
-                SizedBox(width: 6),
+                const SizedBox(width: 6),
                 Text(
                   'Add invoice',
                   style: TextStyle(

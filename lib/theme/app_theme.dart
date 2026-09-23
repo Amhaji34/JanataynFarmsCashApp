@@ -17,6 +17,8 @@ class _LightTokens {
   static const ink = Color(0xFF16181A);
   static const inkSecondary = Color(0xFF5E635F);
   static const inkMuted = Color(0xFF8B8F8A);
+  static const loan = Color(0xFF3B7DD8);
+  static const advance = Color(0xFF8257E5);
 }
 
 class _DarkTokens {
@@ -28,6 +30,10 @@ class _DarkTokens {
   static const ink = Color(0xFFF1F2EE);
   static const inkSecondary = Color(0xFFAEB3A9);
   static const inkMuted = Color(0xFF7C8177);
+  // Brighter/lighter than the light-mode blue and purple - the light
+  // variants read as muddy against a dark canvas/surface.
+  static const loan = Color(0xFF6FA8FF);
+  static const advance = Color(0xFFB18CFF);
 }
 
 /// Central design tokens for the app.
@@ -36,16 +42,18 @@ class _DarkTokens {
 /// green of the wordmark, the tractor red, and the navy of the wheels — so the
 /// UI reads as one brand family rather than default Material blue.
 ///
-/// The seven "surface"/"ink" tokens below are the only ones that differ
-/// between light and dark — brand and semantic-transaction colors stay
-/// the same in both (they're already vivid enough to read on a dark
-/// canvas). [AppThemeController] flips [_dark] whenever the effective
-/// brightness changes and triggers a full app rebuild, so every widget
-/// re-reads these getters during that rebuild. Because a
+/// The "surface"/"ink" tokens plus `loan`/`advance` are the only ones
+/// that differ between light and dark — the rest of the semantic
+/// transaction colors and all brand colors stay the same in both
+/// (they're already vivid enough to read on a dark canvas; blue and
+/// purple weren't). [AppThemeController] flips [_dark] whenever the
+/// effective brightness changes and triggers a full app rebuild, so
+/// every widget re-reads these getters during that rebuild. Because a
 /// runtime-switchable color can never be a Dart `const`, any widget
-/// using one of these seven inside a `const` constructor needs that
-/// `const` removed — everything else in this file (brand/semantic
-/// colors) is untouched and still `const` everywhere it's used.
+/// using one of these theme-aware tokens inside a `const` constructor
+/// needs that `const` removed — everything else in this file
+/// (brand/other semantic colors) is untouched and still `const`
+/// everywhere it's used.
 class AppColors {
   AppColors._();
 
@@ -79,11 +87,15 @@ class AppColors {
 
   // ---- Transaction type accents --------------------------------------
   // Same semantic mapping the app has always used, just tuned to sit
-  // together as a set rather than raw Material primaries.
+  // together as a set rather than raw Material primaries. loan/advance
+  // are theme-aware (see _LightTokens/_DarkTokens) since the light-mode
+  // blue/purple read poorly against a dark canvas; the rest are vivid
+  // enough to stay the same in both themes.
   static const expense = Color(0xFFDC4A47);
   static const payroll = Color(0xFFE08526);
-  static const loan = Color(0xFF3B7DD8);
-  static const advance = Color(0xFF8257E5);
+  static Color get loan => _dark ? _DarkTokens.loan : _LightTokens.loan;
+  static Color get advance =>
+      _dark ? _DarkTokens.advance : _LightTokens.advance;
   static const cashIn = Color(0xFF2E9E5B);
   static const neutral = Color(0xFF8B8F8A);
 

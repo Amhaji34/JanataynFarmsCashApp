@@ -1405,20 +1405,26 @@ a raw hex is drifting from the system.
 
 ### Dark theme
 
-Seven tokens — `canvas`, `surface`, `hairline`, `fieldFill`, `ink`,
-`inkSecondary`, `inkMuted` — flip between light and dark; every other
-`AppColors` value (brand colors, the six transaction-type accents,
+Nine tokens flip between light and dark: `canvas`, `surface`,
+`hairline`, `fieldFill`, `ink`, `inkSecondary`, `inkMuted`, and — since
+the light-mode blue/purple read as muddy on a dark canvas —
+`loan`/`advance` (dark mode uses a brighter `#6FA8FF`/`#B18CFF` instead
+of the light-mode `#3B7DD8`/`#8257E5`). Every other `AppColors` value
+(remaining brand colors, `expense`/`payroll`/`cashIn`/`neutral`,
 `danger`, the decorative name palette) is the same in both, since
-they're already vivid enough to read on a dark canvas. Those seven are
-`static Color get`s backed by a private `AppColors._dark` flag, **not**
-`static const` like the rest of the file — a runtime-switchable color
-can never be a Dart compile-time constant. This is the one place this
-app's "just call `AppColors.x`, no `BuildContext` needed" convention
-(see the note atop `AppColors` in `app_theme.dart`) has a real cost: any
-widget using one of these seven inside a `const` constructor needs that
-`const` removed, which touched roughly 165 call sites across 30 files
-when this was added — if you add an eighth theme-aware token later,
-expect a similar (if smaller) sweep, not just a two-line palette edit.
+they're already vivid enough to read on a dark canvas. Theme-aware
+tokens are `static Color get`s backed by a private `AppColors._dark`
+flag, **not** `static const` like the rest of the file — a
+runtime-switchable color can never be a Dart compile-time constant.
+This is the one place this app's "just call `AppColors.x`, no
+`BuildContext` needed" convention (see the note atop `AppColors` in
+`app_theme.dart`) has a real cost: any widget using a theme-aware token
+inside a `const` constructor needs that `const` removed — ~165 call
+sites across 30 files for the original seven, one more when `loan`/
+`advance` joined them. If you make another token theme-aware later,
+expect a similar sweep, not just a palette edit — `flutter analyze`
+enumerates every miss precisely (`invalid_constant`), which is how both
+passes here were done.
 
 `AppTheme.light`/`AppTheme.dark` don't read the ambient `AppColors`
 getters for this reason — building both at once from a shared mutable
