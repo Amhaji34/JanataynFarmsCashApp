@@ -1170,14 +1170,24 @@ lib/
 │   │                                 constructor params, which just seed
 │   │                                 `_selectedAccount`/`_dateRange` — the
 │   │                                 screen behaves identically either
-│   │                                 way once opened. A "Payroll /
-│   │                                 Advances / Loans / Expenses" chip
+│   │                                 way once opened. An "Expenses /
+│   │                                 Advances / Payroll / Loans" chip
 │   │                                 selector switches which transaction
 │   │                                 type(s) are shown, with a contextual
 │   │                                 filter (staff for Payroll/Advances,
 │   │                                 partner for Loans, category for
-│   │                                 Expenses) plus a shared date-range
-│   │                                 filter. No currency toggle - unlike
+│   │                                 Expenses) and the date-range filter
+│   │                                 each on their own full-width row,
+│   │                                 stacked rather than sharing a row -
+│   │                                 a picked date range's label is long
+│   │                                 enough that splitting the row left
+│   │                                 neither one enough space (visible as
+│   │                                 a `RenderFlex` overflow at narrow
+│   │                                 widths). Both rows get a clear ("×")
+│   │                                 `IconButton` once set, same pattern
+│   │                                 for the contextual filter as the
+│   │                                 date range already had. No currency
+│   │                                 toggle - unlike
 │   │                                 most of the app, this screen never
 │   │                                 lets you narrow to one currency;
 │   │                                 every summary figure is a
@@ -1266,7 +1276,25 @@ lib/
 │   │                                 the card - entries are still sorted
 │   │                                 highest to lowest, so what's visible
 │   │                                 without scrolling is always the
-│   │                                 biggest ones first.
+│   │                                 biggest ones first. Every chart's
+│   │                                 `BarTouchTooltipData` sets
+│   │                                 `fitInsideHorizontally`/
+│   │                                 `fitInsideVertically: true` - fl_chart
+│   │                                 otherwise centers a touched bar's
+│   │                                 tooltip blindly and lets it overflow
+│   │                                 past the chart's own bounds, which a
+│   │                                 scrollable ancestor then clips for
+│   │                                 whichever bar sits at the very edge
+│   │                                 (the first bar in particular, since
+│   │                                 it has no bar to its left to absorb
+│   │                                 the overflow) - the symptom was an
+│   │                                 empty black box with no visible
+│   │                                 value where that bar's tooltip
+│   │                                 should be. These two flags are
+│   │                                 fl_chart's own built-in fix: they
+│   │                                 shift an edge tooltip back inside
+│   │                                 the chart instead of letting it
+│   │                                 overflow at all.
 │   │                                 `_expenseAmountFor(t)` (a narrower cousin of
 │   │                                 `_headlineAmountFor` used only by
 │   │                                 Expenses) sums only the matching

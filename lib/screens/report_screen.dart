@@ -651,6 +651,14 @@ class _ReportScreenState extends State<ReportScreen> {
         barTouchData: BarTouchData(
           touchTooltipData: BarTouchTooltipData(
             getTooltipColor: (_) => AppColors.ink,
+            // Without these, fl_chart centers a touched bar's tooltip
+            // blindly and lets it overflow past the chart's own edges -
+            // for the first/last bar that overflow gets clipped by
+            // whichever scrollable ancestor contains the chart, showing
+            // up as an empty box with no visible value. These shift the
+            // tooltip back inside the chart's bounds instead.
+            fitInsideHorizontally: true,
+            fitInsideVertically: true,
             getTooltipItem: (group, groupIndex, rod, rodIndex) =>
                 BarTooltipItem(
                   formatMoney(rod.toY, currency),
@@ -794,105 +802,159 @@ class _ReportScreenState extends State<ReportScreen> {
                 ),
                 const SizedBox(height: 12),
 
-                // Filters
+                // Filters - the contextual dropdown (staff/partner/
+                // category) and the date range each get their own full-
+                // width row, stacked, rather than squeezed side by side -
+                // a picked date range's label is long enough that sharing
+                // a row left neither one enough space.
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       if (_selectedAccount == 'Payroll' ||
                           _selectedAccount == 'Advances')
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            initialValue: _selectedStaffId,
-                            decoration: _dropdownDecoration('All staff'),
-                            isExpanded: true,
-                            hint: const Text('All staff'),
-                            items: _staff
-                                .map(
-                                  (s) => DropdownMenuItem<String>(
-                                    value: s['id'] as String,
-                                    child: Text(s['name'] as String),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (value) =>
-                                setState(() => _selectedStaffId = value),
-                          ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: DropdownButtonFormField<String>(
+                                initialValue: _selectedStaffId,
+                                decoration: _dropdownDecoration('All staff'),
+                                isExpanded: true,
+                                hint: const Text('All staff'),
+                                items: _staff
+                                    .map(
+                                      (s) => DropdownMenuItem<String>(
+                                        value: s['id'] as String,
+                                        child: Text(s['name'] as String),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (value) =>
+                                    setState(() => _selectedStaffId = value),
+                              ),
+                            ),
+                            if (_selectedStaffId != null)
+                              IconButton(
+                                icon: const Icon(Icons.close, size: 18),
+                                color: AppColors.inkMuted,
+                                onPressed: () =>
+                                    setState(() => _selectedStaffId = null),
+                              ),
+                          ],
                         ),
                       if (_selectedAccount == 'Loans')
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            initialValue: _selectedPartnerId,
-                            decoration: _dropdownDecoration('All partners'),
-                            isExpanded: true,
-                            hint: const Text('All partners'),
-                            items: _partners
-                                .map(
-                                  (p) => DropdownMenuItem<String>(
-                                    value: p['id'] as String,
-                                    child: Text(p['name'] as String),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (value) =>
-                                setState(() => _selectedPartnerId = value),
-                          ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: DropdownButtonFormField<String>(
+                                initialValue: _selectedPartnerId,
+                                decoration: _dropdownDecoration('All partners'),
+                                isExpanded: true,
+                                hint: const Text('All partners'),
+                                items: _partners
+                                    .map(
+                                      (p) => DropdownMenuItem<String>(
+                                        value: p['id'] as String,
+                                        child: Text(p['name'] as String),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (value) =>
+                                    setState(() => _selectedPartnerId = value),
+                              ),
+                            ),
+                            if (_selectedPartnerId != null)
+                              IconButton(
+                                icon: const Icon(Icons.close, size: 18),
+                                color: AppColors.inkMuted,
+                                onPressed: () =>
+                                    setState(() => _selectedPartnerId = null),
+                              ),
+                          ],
                         ),
                       if (_selectedAccount == 'Expenses')
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            initialValue: _selectedCategoryName,
-                            decoration: _dropdownDecoration('All categories'),
-                            isExpanded: true,
-                            hint: const Text('All categories'),
-                            items: _categories
-                                .map(
-                                  (c) => DropdownMenuItem<String>(
-                                    value: c['name'] as String,
-                                    child: Text(c['name'] as String),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (value) =>
-                                setState(() => _selectedCategoryName = value),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: DropdownButtonFormField<String>(
+                                initialValue: _selectedCategoryName,
+                                decoration: _dropdownDecoration(
+                                  'All categories',
+                                ),
+                                isExpanded: true,
+                                hint: const Text('All categories'),
+                                items: _categories
+                                    .map(
+                                      (c) => DropdownMenuItem<String>(
+                                        value: c['name'] as String,
+                                        child: Text(c['name'] as String),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (value) => setState(
+                                  () => _selectedCategoryName = value,
+                                ),
+                              ),
+                            ),
+                            if (_selectedCategoryName != null)
+                              IconButton(
+                                icon: const Icon(Icons.close, size: 18),
+                                color: AppColors.inkMuted,
+                                onPressed: () => setState(
+                                  () => _selectedCategoryName = null,
+                                ),
+                              ),
+                          ],
+                        ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _pickDateRange,
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: _dateRange == null
+                                    ? AppColors.inkSecondary
+                                    : AppColors.brandGreen,
+                                backgroundColor: _dateRange == null
+                                    ? AppColors.surface
+                                    : AppColors.brandGreen.withValues(
+                                        alpha: 0.08,
+                                      ),
+                                side: BorderSide(
+                                  color: _dateRange == null
+                                      ? AppColors.hairline
+                                      : AppColors.brandGreen.withValues(
+                                          alpha: 0.35,
+                                        ),
+                                ),
+                                alignment: Alignment.centerLeft,
+                              ),
+                              icon: const Icon(
+                                Icons.calendar_today_outlined,
+                                size: 15,
+                              ),
+                              label: Text(
+                                _dateRange == null
+                                    ? 'Date'
+                                    : '${_dateFormat.format(_dateRange!.start)} - ${_dateFormat.format(_dateRange!.end)}',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
-                      const SizedBox(width: 10),
-                      OutlinedButton.icon(
-                        onPressed: _pickDateRange,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: _dateRange == null
-                              ? AppColors.inkSecondary
-                              : AppColors.brandGreen,
-                          backgroundColor: _dateRange == null
-                              ? AppColors.surface
-                              : AppColors.brandGreen.withValues(alpha: 0.08),
-                          side: BorderSide(
-                            color: _dateRange == null
-                                ? AppColors.hairline
-                                : AppColors.brandGreen.withValues(alpha: 0.35),
-                          ),
-                        ),
-                        icon: const Icon(
-                          Icons.calendar_today_outlined,
-                          size: 15,
-                        ),
-                        label: Text(
-                          _dateRange == null
-                              ? 'Date'
-                              : '${_dateFormat.format(_dateRange!.start)} - ${_dateFormat.format(_dateRange!.end)}',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                          if (_dateRange != null)
+                            IconButton(
+                              icon: const Icon(Icons.close, size: 18),
+                              color: AppColors.inkMuted,
+                              onPressed: () =>
+                                  setState(() => _dateRange = null),
+                            ),
+                        ],
                       ),
-                      if (_dateRange != null)
-                        IconButton(
-                          icon: const Icon(Icons.close, size: 18),
-                          color: AppColors.inkMuted,
-                          onPressed: () => setState(() => _dateRange = null),
-                        ),
                     ],
                   ),
                 ),
