@@ -1198,23 +1198,23 @@ lib/
 │   │                                 category_invoices_screen.dart for
 │   │                                 Expenses — see both entries below).
 │   │                                 Expenses shows "Spending by
-│   │                                 category" (spend by category,
-│   │                                 capped to top 7 + "Other" — hidden
-│   │                                 once a single category is selected,
-│   │                                 since a breakdown of one category
-│   │                                 isn't useful and would otherwise
-│   │                                 still show *other* categories that
-│   │                                 happen to share a multi-invoice
-│   │                                 transaction with the selected one).
-│   │                                 Payroll/Advances show the same
-│   │                                 shape of chart broken down by staff
-│   │                                 instead of category ("Payroll by
-│   │                                 staff"/"Advances by staff"), and
-│   │                                 Loans by partner ("Loans by
-│   │                                 partner") — same top-7-plus-Other
-│   │                                 cap, same "hidden once you've
-│   │                                 already filtered to one staff/
-│   │                                 partner" reasoning
+│   │                                 category" (every category, sorted
+│   │                                 highest to lowest — not capped, see
+│   │                                 the chart-scrolling note below —
+│   │                                 hidden once a single category is
+│   │                                 selected, since a breakdown of one
+│   │                                 category isn't useful and would
+│   │                                 otherwise still show *other*
+│   │                                 categories that happen to share a
+│   │                                 multi-invoice transaction with the
+│   │                                 selected one). Payroll/Advances show
+│   │                                 the same shape of chart broken down
+│   │                                 by staff instead of category
+│   │                                 ("Payroll by staff"/"Advances by
+│   │                                 staff"), and Loans by partner
+│   │                                 ("Loans by partner") — same "hidden
+│   │                                 once you've already filtered to one
+│   │                                 staff/partner" reasoning
 │   │                                 (`_breakdownAlreadyFiltered`).
 │   │                                 These three use gross amounts only
 │   │                                 (`_headlineAmountFor(t)`: payroll
@@ -1252,8 +1252,22 @@ lib/
 │   │                                 without this, fl_chart lays out
 │   │                                 each title at its natural unbounded
 │   │                                 width and several long names
-│   │                                 overlap. `_expenseAmountFor(t)` (a
-│   │                                 narrower cousin of
+│   │                                 overlap. Neither the category nor
+│   │                                 the staff/partner breakdown chart
+│   │                                 caps how many entries it shows -
+│   │                                 `_barChart()` instead enforces a
+│   │                                 minimum per-bar width (56px) and,
+│   │                                 once `data.length * 56` would exceed
+│   │                                 the card's width, wraps the chart in
+│   │                                 a horizontally-scrolling
+│   │                                 `SingleChildScrollView` sized to fit
+│   │                                 every bar at that minimum width
+│   │                                 rather than squeezing them all into
+│   │                                 the card - entries are still sorted
+│   │                                 highest to lowest, so what's visible
+│   │                                 without scrolling is always the
+│   │                                 biggest ones first.
+│   │                                 `_expenseAmountFor(t)` (a narrower cousin of
 │   │                                 `_headlineAmountFor` used only by
 │   │                                 Expenses) sums only the matching
 │   │                                 `transaction_items` row(s) of a

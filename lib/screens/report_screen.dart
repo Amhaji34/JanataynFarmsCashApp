@@ -25,7 +25,7 @@ class ReportScreen extends StatefulWidget {
 class _ReportScreenState extends State<ReportScreen> {
   static const _accounts = ['Expenses', 'Advances', 'Payroll', 'Loans'];
 
-  late String _selectedAccount = widget.initialAccount ?? 'Payroll';
+  late String _selectedAccount = widget.initialAccount ?? 'Expenses';
 
   bool _loading = true;
   String? _errorMessage;
@@ -250,11 +250,12 @@ class _ReportScreenState extends State<ReportScreen> {
     }
   }
 
-  /// Spend per category for one currency, sorted descending, capped to
-  /// the top 7 with the remainder folded into "Other" so the chart stays
-  /// readable. A bar chart can't sensibly overlay two currencies on one
-  /// axis, so this renders as one chart card per currency that actually
-  /// has data - see the build method.
+  /// Spend per category for one currency, sorted descending - every
+  /// category, not capped, since the chart itself scrolls horizontally
+  /// once there isn't room to fit them all (see `_barChart`). A bar
+  /// chart can't sensibly overlay two currencies on one axis, so this
+  /// renders as one chart card per currency that actually has data -
+  /// see the build method.
   List<MapEntry<String, double>> _categoryChartData(AppCurrency currency) {
     final totals = <String, double>{};
     for (final t in _filtered) {
@@ -268,16 +269,7 @@ class _ReportScreenState extends State<ReportScreen> {
         totals[category] = (totals[category] ?? 0) + amount;
       }
     }
-    final sorted = totals.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-
-    if (sorted.length <= 7) return sorted;
-    final top = sorted.take(7).toList();
-    final otherTotal = sorted
-        .skip(7)
-        .fold<double>(0, (sum, e) => sum + e.value);
-    top.add(MapEntry('Other', otherTotal));
-    return top;
+    return totals.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
   }
 
   /// Which name field the breakdown chart groups by - staff for
@@ -307,8 +299,9 @@ class _ReportScreenState extends State<ReportScreen> {
       : _selectedStaffId != null;
 
   /// The headline gross amount broken down by staff/partner for one
-  /// currency - the Payroll/Advances/Loans counterpart of
-  /// `_categoryChartData`, same top-7-plus-Other shape.
+  /// currency, sorted descending - the Payroll/Advances/Loans
+  /// counterpart of `_categoryChartData`, same "every entry, chart
+  /// scrolls if needed" shape.
   List<MapEntry<String, double>> _breakdownChartData(AppCurrency currency) {
     final totals = <String, double>{};
     for (final t in _filtered) {
@@ -321,16 +314,7 @@ class _ReportScreenState extends State<ReportScreen> {
       if (name == null || name.isEmpty) continue;
       totals[name] = (totals[name] ?? 0) + amount;
     }
-    final sorted = totals.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-
-    if (sorted.length <= 7) return sorted;
-    final top = sorted.take(7).toList();
-    final otherTotal = sorted
-        .skip(7)
-        .fold<double>(0, (sum, e) => sum + e.value);
-    top.add(MapEntry('Other', otherTotal));
-    return top;
+    return totals.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
   }
 
   /// Every currently filtered transaction, as an AccountRecord -
@@ -602,14 +586,43 @@ class _ReportScreenState extends State<ReportScreen> {
     }
     final maxValue = data.map((e) => e.value).reduce((a, b) => a > b ? a : b);
 
+    // Every bar gets at least this much width - below it, labels and
+    // bars start crowding each other regardless of how few characters
+    // the label wraps to. Past a certain number of entries this makes
+    // the chart wider than the card, so it scrolls horizontally instead
+    // of squeezing every bar into the same fixed width.
+    const minSlotWidth = 56.0;
+    // A touched bar's tooltip bubble is centered over it and can be
+    // wider than half a slot - without this padding, the leftmost (or
+    // rightmost) bar's tooltip renders partly past the scrollable
+    // content's edge and gets clipped there by SingleChildScrollView,
+    // instead of just floating past the visible viewport like it does
+    // for every other bar.
+    const chartPadding = 28.0;
+
     return LayoutBuilder(
       builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth - chartPadding * 2;
+        final barsWidth = data.length * minSlotWidth > availableWidth
+            ? data.length * minSlotWidth
+            : availableWidth;
         // Each label gets boxed to its own bar's slot width - without
         // this, fl_chart lays out each title as its natural (unbounded)
         // text width, so on a category axis with several long names they
         // overlap their neighbors instead of wrapping or truncating.
-        final slotWidth = constraints.maxWidth / data.length;
-        return _buildBarChart(data, maxValue, slotWidth, currency);
+        final slotWidth = barsWidth / data.length;
+        final chart = Padding(
+          padding: const EdgeInsets.symmetric(horizontal: chartPadding),
+          child: SizedBox(
+            width: barsWidth,
+            child: _buildBarChart(data, maxValue, slotWidth, currency),
+          ),
+        );
+        if (barsWidth <= availableWidth) return chart;
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: chart,
+        );
       },
     );
   }
