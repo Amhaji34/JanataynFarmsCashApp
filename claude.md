@@ -1210,21 +1210,34 @@ lib/
 │   │                                 segmented-pill language as
 │   │                                 `CurrencyToggle`) sits below the
 │   │                                 filters and applies to every tab, not
-│   │                                 just Profit: "Both" (the default)
-│   │                                 keeps every chart/card/list on this
-│   │                                 screen showing USD and SLSH side by
-│   │                                 side, exactly as elsewhere in the app
-│   │                                 (see "Currencies" above - still never
-│   │                                 blended). Picking "USD" or "SLSH"
-│   │                                 instead collapses every figure on
-│   │                                 this screen into that one currency,
-│   │                                 converting the *other* currency's
-│   │                                 contribution using an exchange rate
-│   │                                 the admin types into a "1 USD = ___
-│   │                                 SLSH" field that only appears in that
-│   │                                 mode (default `11000`, matching a
-│   │                                 typical money-changer quote at the
-│   │                                 time this was built). This is a
+│   │                                 just Profit: "Both" keeps every
+│   │                                 chart/card/list on this screen
+│   │                                 showing USD and SLSH side by side,
+│   │                                 exactly as elsewhere in the app (see
+│   │                                 "Currencies" above - still never
+│   │                                 blended). Picking "USD" (the default
+│   │                                 - most reports here are read with one
+│   │                                 currency in mind) or "SLSH" instead
+│   │                                 collapses every figure on this screen
+│   │                                 into that one currency, converting
+│   │                                 the *other* currency's contribution
+│   │                                 using an exchange rate the admin
+│   │                                 types into a "1 USD = ___ SLSH" field
+│   │                                 that only appears in that mode
+│   │                                 (default `11000`, matching a typical
+│   │                                 money-changer quote at the time this
+│   │                                 was built). The card itself starts
+│   │                                 collapsed (`_currencyDisplayExpanded`,
+│   │                                 default `false`) - its header shows
+│   │                                 just a one-line summary of the
+│   │                                 current selection
+│   │                                 (`_currencyDisplaySummary`, e.g. "USD
+│   │                                 (1 = 11000 SLSH)") and a chevron;
+│   │                                 tapping it expands to reveal the mode
+│   │                                 toggle and rate field, so it doesn't
+│   │                                 eat vertical space on every tab
+│   │                                 unless you're actively changing it.
+│   │                                 This is a
 │   │                                 second deliberate, visible exception
 │   │                                 to "no exchange rate anywhere in this
 │   │                                 app" (the first is

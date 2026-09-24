@@ -71,11 +71,18 @@ class _ReportScreenState extends State<ReportScreen> {
   /// The rate is 1 USD in SLSH, matching how a money changer would quote
   /// it; not persisted anywhere (same "no stored exchange rate" stance
   /// as exchange_screen.dart - it's re-entered per session/visit).
-  _CurrencyDisplayMode _displayMode = _CurrencyDisplayMode.both;
+  /// Defaults to USD, not "Both" - most reports here are read with one
+  /// currency in mind, and "Both" is one tap away in the toggle.
+  _CurrencyDisplayMode _displayMode = _CurrencyDisplayMode.usdOnly;
   double _exchangeRate = 11000;
   late final _rateController = TextEditingController(
     text: _exchangeRate.toStringAsFixed(0),
   );
+
+  /// Collapsed by default so the mode toggle + rate field don't eat
+  /// space on every tab - expands on tap to reveal them, collapses back
+  /// to just a one-line summary of the current selection.
+  bool _currencyDisplayExpanded = false;
 
   final _dateFormat = DateFormat('MMM d, yyyy');
   final _monthLabelFormat = DateFormat('MMM');
@@ -247,6 +254,17 @@ class _ReportScreenState extends State<ReportScreen> {
     _CurrencyDisplayMode.usdOnly => [AppCurrency.usd],
     _CurrencyDisplayMode.slshOnly => [AppCurrency.slsh],
   };
+
+  /// The collapsed "Currency display" card's one-line summary of the
+  /// current selection.
+  String get _currencyDisplaySummary {
+    final rate = _exchangeRate.toStringAsFixed(0);
+    return switch (_displayMode) {
+      _CurrencyDisplayMode.both => 'Both',
+      _CurrencyDisplayMode.usdOnly => 'USD (1 = $rate SLSH)',
+      _CurrencyDisplayMode.slshOnly => 'SLSH (1 USD = $rate)',
+    };
+  }
 
   /// Converts one amount from its native currency into `to` using the
   /// admin-entered exchange rate (1 USD = `_exchangeRate` SLSH) - a
@@ -1298,12 +1316,13 @@ class _ReportScreenState extends State<ReportScreen> {
                   ),
                 ),
 
-                // Currency display - "Both" (default) shows every chart/
-                // card as USD and SLSH side by side, exactly as the rest
-                // of the app does; picking USD or SLSH instead collapses
-                // every figure on this screen into that one currency
-                // using the rate entered below. Applies to every tab, not
-                // just Profit.
+                // Currency display - "Both" shows every chart/card as USD
+                // and SLSH side by side, exactly as the rest of the app
+                // does; picking USD or SLSH instead collapses every
+                // figure on this screen into that one currency using the
+                // rate entered below. Applies to every tab, not just
+                // Profit. Collapsed by default (just a one-line summary,
+                // tap to expand) so it doesn't eat space on every tab.
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                   child: AppCard(
@@ -1311,55 +1330,87 @@ class _ReportScreenState extends State<ReportScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Currency display',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.inkSecondary,
+                        InkWell(
+                          onTap: () => setState(
+                            () => _currencyDisplayExpanded =
+                                !_currencyDisplayExpanded,
                           ),
-                        ),
-                        const SizedBox(height: 10),
-                        _CurrencyDisplayModeToggle(
-                          value: _displayMode,
-                          onChanged: (mode) =>
-                              setState(() => _displayMode = mode),
-                        ),
-                        if (_displayMode != _CurrencyDisplayMode.both) ...[
-                          const SizedBox(height: 10),
-                          Row(
+                          child: Row(
                             children: [
                               Text(
-                                '1 USD =',
+                                'Currency display',
                                 style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700,
                                   color: AppColors.inkSecondary,
                                 ),
                               ),
                               const SizedBox(width: 8),
                               Expanded(
-                                child: TextField(
-                                  controller: _rateController,
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                      ),
-                                  decoration: _dropdownDecoration(
-                                    '11000',
-                                  ).copyWith(suffixText: 'SLSH'),
-                                  onChanged: (value) {
-                                    final parsed = double.tryParse(
-                                      value.trim(),
-                                    );
-                                    if (parsed != null && parsed > 0) {
-                                      setState(() => _exchangeRate = parsed);
-                                    }
-                                  },
+                                child: Text(
+                                  _currencyDisplaySummary,
+                                  textAlign: TextAlign.right,
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.brandGreen,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
+                              ),
+                              Icon(
+                                _currencyDisplayExpanded
+                                    ? Icons.expand_less
+                                    : Icons.expand_more,
+                                size: 20,
+                                color: AppColors.inkMuted,
                               ),
                             ],
                           ),
+                        ),
+                        if (_currencyDisplayExpanded) ...[
+                          const SizedBox(height: 10),
+                          _CurrencyDisplayModeToggle(
+                            value: _displayMode,
+                            onChanged: (mode) =>
+                                setState(() => _displayMode = mode),
+                          ),
+                          if (_displayMode != _CurrencyDisplayMode.both) ...[
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Text(
+                                  '1 USD =',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.inkSecondary,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: TextField(
+                                    controller: _rateController,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                          decimal: true,
+                                        ),
+                                    decoration: _dropdownDecoration(
+                                      '11000',
+                                    ).copyWith(suffixText: 'SLSH'),
+                                    onChanged: (value) {
+                                      final parsed = double.tryParse(
+                                        value.trim(),
+                                      );
+                                      if (parsed != null && parsed > 0) {
+                                        setState(() => _exchangeRate = parsed);
+                                      }
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ],
                       ],
                     ),
