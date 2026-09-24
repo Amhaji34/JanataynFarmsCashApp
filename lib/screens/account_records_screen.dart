@@ -19,6 +19,7 @@ class AccountRecord {
     required this.isPositive,
     required this.isNeutral,
     required this.note,
+    this.kgSold,
   });
 
   /// Already fully formed (e.g. "John Doe · Advance given") - built by
@@ -38,6 +39,11 @@ class AccountRecord {
   final bool isNeutral;
 
   final String note;
+
+  /// Set only for the Harvest tab's sale records - shows an extra "Kg"
+  /// row in the detail sheet. Null for every other tab, which have
+  /// nothing to show there.
+  final double? kgSold;
 }
 
 /// Every record in the currently filtered Payroll/Advances/Loans view,
@@ -107,7 +113,10 @@ class AccountRecordsScreen extends StatelessWidget {
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              _dateFormat.format(record.date),
+                              record.kgSold == null
+                                  ? _dateFormat.format(record.date)
+                                  : '${_dateFormat.format(record.date)} · '
+                                        '${record.kgSold!.toStringAsFixed(1)} kg',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: AppColors.inkMuted,
@@ -222,6 +231,8 @@ class _RecordDetailSheet extends StatelessWidget {
                 ),
                 const SizedBox(height: 20),
                 _row('Details', record.title),
+                if (record.kgSold != null)
+                  _row('Kg sold', '${record.kgSold!.toStringAsFixed(1)} kg'),
                 _row('Date', _dateFormat.format(record.date)),
                 if (record.note.trim().isNotEmpty)
                   _row('Note', record.note.trim()),

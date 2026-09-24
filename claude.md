@@ -1495,17 +1495,39 @@ lib/
 │   │                                 transport_fee` formula used
 │   │                                 everywhere a sale's value feeds a
 │   │                                 total (see the `harvest_sales` table
-│   │                                 doc above) - then a "View N sales"
-│   │                                 button (`_openHarvestSales`) into
-│   │                                 `account_records_screen.dart`,
+│   │                                 doc above) - then, also per
+│   │                                 currency, "Paid vs unpaid"
+│   │                                 (`_harvestPaidUnpaidChartData`, a
+│   │                                 fixed 2-bar "Paid"/"Unpaid" chart):
+│   │                                 Paid sums `_customerPayments`
+│   │                                 (fetched separately in `_loadAll`,
+│   │                                 just `sale_id`/`amount`/`currency`)
+│   │                                 whose `sale_id` matches one of the
+│   │                                 filtered sales, and Unpaid is what's
+│   │                                 left of those sales' total value,
+│   │                                 floored at 0. This can only ever
+│   │                                 reflect a sale's *upfront* payment -
+│   │                                 a later standalone payment has
+│   │                                 `sale_id: null` and reduces the
+│   │                                 customer's overall balance instead,
+│   │                                 never one specific sale's (see the
+│   │                                 `customer_payments` table doc
+│   │                                 above), so it can't be attributed
+│   │                                 back to a sale here; the chart's own
+│   │                                 subtitle says so. Then a "View N
+│   │                                 sales" button (`_openHarvestSales`)
+│   │                                 into `account_records_screen.dart`,
 │   │                                 reusing that screen rather than a
 │   │                                 bespoke one (`_harvestSaleRecords`
 │   │                                 builds `AccountRecord`s the same way
 │   │                                 `_accountRecords` does for the other
 │   │                                 three tabs, customer name as the
-│   │                                 title). Respects the Currency
-│   │                                 display card and its exchange rate
-│   │                                 exactly like every other tab's
+│   │                                 title, `kgSold` set so the record
+│   │                                 shows kg alongside its value - see
+│   │                                 that screen's own entry below).
+│   │                                 Respects the Currency display card
+│   │                                 and its exchange rate exactly like
+│   │                                 every other tab's
 │   │                                 charts/records. Because `_barChart`/
 │   │                                 `_buildBarChart` needed to render a
 │   │                                 currency-less kg chart alongside
@@ -1518,25 +1540,32 @@ lib/
 │   │                                 kg chart passes `(v) =>
 │   │                                 '${v.toStringAsFixed(1)} kg'`.
 │   ├── account_records_screen.dart — every currently filtered
-│   │                                 Payroll/Advances/Loans transaction,
-│   │                                 as cards (built by
+│   │                                 Payroll/Advances/Loans transaction
+│   │                                 (or, for the Harvest tab, every
+│   │                                 filtered sale), as cards (built by
 │   │                                 report_screen.dart's
-│   │                                 `_accountRecords` getter from
-│   │                                 whatever's currently filtered - this
-│   │                                 screen never fetches on its own),
-│   │                                 reached via report_screen.dart's
-│   │                                 "View N records" button. The
-│   │                                 Payroll/Advances/Loans counterpart
-│   │                                 of category_invoices_screen.dart
-│   │                                 below, generalized: an
-│   │                                 `AccountRecord` carries an
-│   │                                 already-formatted title (from
-│   │                                 report_screen.dart's `_rowTitle()`)
-│   │                                 rather than category-specific
-│   │                                 fields. Tapping a card opens a
-│   │                                 bottom sheet with that record's
-│   │                                 date, amount, and note. Read-only,
-│   │                                 no edit/delete here.
+│   │                                 `_accountRecords`/`_harvestSaleRecords`
+│   │                                 getters from whatever's currently
+│   │                                 filtered - this screen never fetches
+│   │                                 on its own), reached via
+│   │                                 report_screen.dart's "View N
+│   │                                 records"/"View N sales" button. The
+│   │                                 Payroll/Advances/Loans/Harvest
+│   │                                 counterpart of
+│   │                                 category_invoices_screen.dart below,
+│   │                                 generalized: an `AccountRecord`
+│   │                                 carries an already-formatted title
+│   │                                 (from report_screen.dart's
+│   │                                 `_rowTitle()`, or the customer name
+│   │                                 for a harvest sale) rather than
+│   │                                 category-specific fields. Tapping a
+│   │                                 card opens a bottom sheet with that
+│   │                                 record's date, amount, and note; the
+│   │                                 optional `kgSold` field (set only for
+│   │                                 a harvest sale record) adds a "Kg
+│   │                                 sold" row there too, and shows inline
+│   │                                 next to the date on the card itself.
+│   │                                 Read-only, no edit/delete here.
 │   ├── category_invoices_screen.dart — every `transaction_items` row in
 │   │                                 one expense category, as cards
 │   │                                 (built by report_screen.dart from

@@ -64,6 +64,16 @@ class _ReportScreenState extends State<ReportScreen> {
   List<Map<String, dynamic>> _harvests = [];
   List<Map<String, dynamic>> _harvestSales = [];
 
+  /// Every `customer_payments` row (just `sale_id`/`amount`/`currency` -
+  /// enough to attribute a payment back to the sale it was made against,
+  /// for the Paid/Unpaid chart below). A payment's `sale_id` is only ever
+  /// set for the upfront payment recorded at sale time; a later
+  /// standalone payment has `sale_id: null` and reduces the customer's
+  /// overall balance instead (see claude.md's `customer_payments` table
+  /// doc), so this chart can only ever reflect upfront payments, not
+  /// later ones - see the Paid/Unpaid chart's own caption.
+  List<Map<String, dynamic>> _customerPayments = [];
+
   String? _selectedStaffId;
   String? _selectedPartnerId;
   String? _selectedCategoryName;
@@ -141,6 +151,9 @@ class _ReportScreenState extends State<ReportScreen> {
           .from('harvest_sales')
           .select('*, customers(name)')
           .order('sale_date', ascending: false);
+      final customerPayments = await supabase
+          .from('customer_payments')
+          .select('sale_id, amount, currency');
 
       setState(() {
         _transactions = List<Map<String, dynamic>>.from(txns);
@@ -150,6 +163,7 @@ class _ReportScreenState extends State<ReportScreen> {
         _fundAdds = List<Map<String, dynamic>>.from(fundAdds);
         _harvests = List<Map<String, dynamic>>.from(harvests);
         _harvestSales = List<Map<String, dynamic>>.from(harvestSales);
+        _customerPayments = List<Map<String, dynamic>>.from(customerPayments);
         _loading = false;
       });
     } catch (e) {
@@ -443,8 +457,43 @@ class _ReportScreenState extends State<ReportScreen> {
         isPositive: true,
         isNeutral: false,
         note: (s['note'] as String? ?? '').trim(),
+        kgSold: (s['kg_sold'] as num).toDouble(),
       );
     }).toList();
+  }
+
+  /// "Paid" vs "Unpaid" for one currency, for the sales in
+  /// `_filteredHarvestSales` - Paid sums `customer_payments` rows whose
+  /// `sale_id` matches one of those sales (only ever the upfront payment
+  /// recorded at sale time - a later standalone payment has `sale_id:
+  /// null` and reduces the customer's overall balance instead, not one
+  /// sale's, so it can't be attributed back here; the chart's own
+  /// caption explains this). Unpaid is what's left of those sales' total
+  /// fee-adjusted value, floored at 0.
+  List<MapEntry<String, double>> _harvestPaidUnpaidChartData(
+    AppCurrency currency,
+  ) {
+    final sales = _filteredHarvestSales;
+    final saleIds = sales.map((s) => s['id'] as String).toSet();
+    var totalValue = 0.0;
+    for (final s in sales) {
+      final native = AppCurrency.fromCode(s['currency'] as String?);
+      if (_displayMode == _CurrencyDisplayMode.both && native != currency) {
+        continue;
+      }
+      totalValue += _displayAmount(_saleValue(s), native, currency);
+    }
+    var paid = 0.0;
+    for (final p in _customerPayments) {
+      if (!saleIds.contains(p['sale_id'])) continue;
+      final native = AppCurrency.fromCode(p['currency'] as String?);
+      if (_displayMode == _CurrencyDisplayMode.both && native != currency) {
+        continue;
+      }
+      paid += _displayAmount((p['amount'] as num).toDouble(), native, currency);
+    }
+    final unpaid = (totalValue - paid).clamp(0.0, double.infinity);
+    return [MapEntry('Paid', paid), MapEntry('Unpaid', unpaid)];
   }
 
   /// Every summary figure is per-currency (never blended - see
@@ -1828,6 +1877,23 @@ class _ReportScreenState extends State<ReportScreen> {
                                       icon: Icons.show_chart,
                                       chart: _barChart(
                                         _harvestMonthlyValueChartData(currency),
+                                        (v) => formatMoney(v, currency),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
+                                for (final currency in _displayCurrencies)
+                                  if (_filteredHarvestSales.isNotEmpty) ...[
+                                    _chartCard(
+                                      title:
+                                          'Paid vs unpaid (${currency.code})',
+                                      subtitle:
+                                          'Upfront payments only - a later '
+                                          "standalone payment isn't tied "
+                                          'to one sale',
+                                      icon: Icons.pie_chart_outline,
+                                      chart: _barChart(
+                                        _harvestPaidUnpaidChartData(currency),
                                         (v) => formatMoney(v, currency),
                                       ),
                                     ),
