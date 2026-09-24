@@ -5,6 +5,7 @@ import '../main.dart';
 import '../theme/app_theme.dart';
 import '../utils/currency.dart';
 import '../widgets/app_ui.dart';
+import 'account_records_screen.dart';
 import 'category_invoices_screen.dart';
 
 class ReportScreen extends StatefulWidget {
@@ -162,6 +163,25 @@ class _ReportScreenState extends State<ReportScreen> {
     return (t['amount'] as num).toDouble();
   }
 
+  /// The "headline" gross amount a transaction contributes to the
+  /// current tab's charts - the counterpart type (advance_deduction,
+  /// loan_repayment) contributes 0, so the breakdown/monthly charts read
+  /// as "money given/paid out", not a net that can dip negative.
+  double _headlineAmountFor(Map<String, dynamic> t) {
+    switch (_selectedAccount) {
+      case 'Payroll':
+        return (t['amount'] as num).toDouble();
+      case 'Advances':
+        return t['type'] == 'advance' ? (t['amount'] as num).toDouble() : 0;
+      case 'Loans':
+        return t['type'] == 'loan' ? (t['amount'] as num).toDouble() : 0;
+      case 'Expenses':
+        return _expenseAmountFor(t);
+      default:
+        return 0;
+    }
+  }
+
   Map<AppCurrency, double> _zeroByCurrency() => {
     for (final c in AppCurrency.values) c: 0.0,
   };
@@ -260,6 +280,86 @@ class _ReportScreenState extends State<ReportScreen> {
     return top;
   }
 
+  /// Which name field the breakdown chart groups by - staff for
+  /// Payroll/Advances, partner for Loans. Not used for Expenses, which
+  /// has its own category breakdown.
+  String? _breakdownNameFor(Map<String, dynamic> t) {
+    switch (_selectedAccount) {
+      case 'Payroll':
+      case 'Advances':
+        return t['staff']?['name'] as String?;
+      case 'Loans':
+        return t['partners']?['name'] as String?;
+      default:
+        return null;
+    }
+  }
+
+  /// "staff"/"partner" - used in the chart's subtitle and to decide
+  /// whether the breakdown chart is redundant with the staff/partner
+  /// filter already selected (same reasoning as Expenses hiding its
+  /// category chart once a category is picked).
+  String get _breakdownDimensionLabel =>
+      _selectedAccount == 'Loans' ? 'partner' : 'staff';
+
+  bool get _breakdownAlreadyFiltered => _selectedAccount == 'Loans'
+      ? _selectedPartnerId != null
+      : _selectedStaffId != null;
+
+  /// The headline gross amount broken down by staff/partner for one
+  /// currency - the Payroll/Advances/Loans counterpart of
+  /// `_categoryChartData`, same top-7-plus-Other shape.
+  List<MapEntry<String, double>> _breakdownChartData(AppCurrency currency) {
+    final totals = <String, double>{};
+    for (final t in _filtered) {
+      if (AppCurrency.fromCode(t['currency'] as String?) != currency) {
+        continue;
+      }
+      final amount = _headlineAmountFor(t);
+      if (amount <= 0) continue;
+      final name = _breakdownNameFor(t);
+      if (name == null || name.isEmpty) continue;
+      totals[name] = (totals[name] ?? 0) + amount;
+    }
+    final sorted = totals.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    if (sorted.length <= 7) return sorted;
+    final top = sorted.take(7).toList();
+    final otherTotal = sorted
+        .skip(7)
+        .fold<double>(0, (sum, e) => sum + e.value);
+    top.add(MapEntry('Other', otherTotal));
+    return top;
+  }
+
+  /// Every currently filtered transaction, as an AccountRecord -
+  /// AccountRecordsScreen's "View N records" list. Used by
+  /// Payroll/Advances/Loans (Expenses has its own, narrower
+  /// category_invoices_screen.dart flow instead).
+  List<AccountRecord> get _accountRecords {
+    return _filtered.map((t) {
+      final type = t['type'] as String;
+      final isIn = _isCashIn(type);
+      final isNeutral = _isNeutral(type);
+      return AccountRecord(
+        title: _rowTitle(t),
+        date: DateTime.parse(t['transaction_date'] as String),
+        amount: (t['amount'] as num).toDouble(),
+        currency: AppCurrency.fromCode(t['currency'] as String?),
+        color: _rowColor(t),
+        icon: isIn
+            ? Icons.south_west
+            : isNeutral
+            ? Icons.sync_alt
+            : _accountIcon,
+        isPositive: isIn,
+        isNeutral: isNeutral,
+        note: (t['note'] as String? ?? '').trim(),
+      );
+    }).toList();
+  }
+
   /// Every `transaction_items` row matching the selected category,
   /// flattened with its parent transaction's date/currency/note - what
   /// CategoryInvoicesScreen shows as cards. Only meaningful once a
@@ -297,8 +397,9 @@ class _ReportScreenState extends State<ReportScreen> {
     return invoices;
   }
 
-  /// Spend per month for one currency, chronological, capped to the most
-  /// recent 6 months present in the filtered data.
+  /// Headline amount per month for one currency, chronological, capped
+  /// to the most recent 6 months present in the filtered data. Shared by
+  /// all four tabs via `_headlineAmountFor`.
   List<MapEntry<String, double>> _monthlyChartData(AppCurrency currency) {
     final totals = <DateTime, double>{};
     for (final t in _filtered) {
@@ -307,7 +408,7 @@ class _ReportScreenState extends State<ReportScreen> {
       }
       final date = DateTime.parse(t['transaction_date'] as String);
       final key = DateTime(date.year, date.month);
-      totals[key] = (totals[key] ?? 0) + _expenseAmountFor(t);
+      totals[key] = (totals[key] ?? 0) + _headlineAmountFor(t);
     }
     final sortedKeys = totals.keys.toList()..sort();
     final recentKeys = sortedKeys.length <= 6
@@ -369,6 +470,17 @@ class _ReportScreenState extends State<ReportScreen> {
         builder: (_) => CategoryInvoicesScreen(
           categoryName: _selectedCategoryName!,
           invoices: _categoryInvoices,
+        ),
+      ),
+    );
+  }
+
+  void _openAccountRecords(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AccountRecordsScreen(
+          accountName: _selectedAccount,
+          records: _accountRecords,
         ),
       ),
     );
@@ -833,52 +945,102 @@ class _ReportScreenState extends State<ReportScreen> {
                 const SizedBox(height: 12),
 
                 Expanded(
-                  child: _selectedAccount == 'Expenses'
-                      ? ListView(
+                  child: filtered.isEmpty
+                      ? EmptyState(
+                          icon: _accountIcon,
+                          title: 'Nothing to report yet',
+                          subtitle:
+                              'No $_selectedAccount records match these '
+                              'filters.',
+                        )
+                      : ListView(
                           padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
                           children: [
-                            // A category breakdown doesn't make sense once
-                            // you've already filtered to one category - it
-                            // would otherwise still show the *other*
-                            // categories that happen to share a
-                            // multi-invoice transaction with the selected
-                            // one, which reads as "why are these here?".
-                            // A bar chart can't sensibly overlay two
-                            // currencies on one axis (see claude.md's
-                            // "Currencies"), so each currency that
-                            // actually has data gets its own chart card.
-                            if (_selectedCategoryName == null) ...[
-                              for (final currency in AppCurrency.values)
-                                if (_categoryChartData(
-                                  currency,
-                                ).isNotEmpty) ...[
-                                  _chartCard(
-                                    title:
-                                        'Spending by category (${currency.code})',
-                                    subtitle: 'Top categories in this range',
-                                    icon: Icons.pie_chart_outline,
-                                    chart: _barChart(
-                                      _categoryChartData(currency),
-                                      currency,
+                            if (_selectedAccount == 'Expenses') ...[
+                              // A category breakdown doesn't make sense
+                              // once you've already filtered to one
+                              // category - it would otherwise still show
+                              // the *other* categories that happen to
+                              // share a multi-invoice transaction with
+                              // the selected one, which reads as "why are
+                              // these here?". A bar chart can't sensibly
+                              // overlay two currencies on one axis (see
+                              // claude.md's "Currencies"), so each
+                              // currency that actually has data gets its
+                              // own chart card.
+                              if (_selectedCategoryName == null) ...[
+                                for (final currency in AppCurrency.values)
+                                  if (_categoryChartData(
+                                    currency,
+                                  ).isNotEmpty) ...[
+                                    _chartCard(
+                                      title:
+                                          'Spending by category (${currency.code})',
+                                      subtitle: 'Top categories in this range',
+                                      icon: Icons.pie_chart_outline,
+                                      chart: _barChart(
+                                        _categoryChartData(currency),
+                                        currency,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
+                              ] else ...[
+                                SizedBox(
+                                  width: double.infinity,
+                                  height: 48,
+                                  child: OutlinedButton.icon(
+                                    onPressed: _categoryInvoices.isEmpty
+                                        ? null
+                                        : () => _openCategoryInvoices(context),
+                                    icon: const Icon(
+                                      Icons.receipt_long_outlined,
+                                      size: 17,
+                                    ),
+                                    label: Text(
+                                      'View ${_categoryInvoices.length} invoice'
+                                      '${_categoryInvoices.length == 1 ? '' : 's'}',
                                     ),
                                   ),
-                                  const SizedBox(height: 12),
-                                ],
+                                ),
+                                const SizedBox(height: 12),
+                              ],
                             ] else ...[
+                              // Same reasoning as the Expenses category
+                              // chart above: a breakdown by staff/partner
+                              // is redundant once you've already filtered
+                              // to one of them.
+                              if (!_breakdownAlreadyFiltered) ...[
+                                for (final currency in AppCurrency.values)
+                                  if (_breakdownChartData(
+                                    currency,
+                                  ).isNotEmpty) ...[
+                                    _chartCard(
+                                      title:
+                                          '$_selectedAccount by $_breakdownDimensionLabel (${currency.code})',
+                                      subtitle:
+                                          'Top $_breakdownDimensionLabel in this range',
+                                      icon: Icons.bar_chart_outlined,
+                                      chart: _barChart(
+                                        _breakdownChartData(currency),
+                                        currency,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
+                              ],
                               SizedBox(
                                 width: double.infinity,
                                 height: 48,
                                 child: OutlinedButton.icon(
-                                  onPressed: _categoryInvoices.isEmpty
-                                      ? null
-                                      : () => _openCategoryInvoices(context),
+                                  onPressed: () => _openAccountRecords(context),
                                   icon: const Icon(
                                     Icons.receipt_long_outlined,
                                     size: 17,
                                   ),
                                   label: Text(
-                                    'View ${_categoryInvoices.length} invoice'
-                                    '${_categoryInvoices.length == 1 ? '' : 's'}',
+                                    'View ${filtered.length} record'
+                                    '${filtered.length == 1 ? '' : 's'}',
                                   ),
                                 ),
                               ),
@@ -887,10 +1049,13 @@ class _ReportScreenState extends State<ReportScreen> {
                             for (final currency in AppCurrency.values)
                               if (_monthlyChartData(currency).isNotEmpty) ...[
                                 _chartCard(
-                                  title: 'Spending by month (${currency.code})',
-                                  subtitle: _selectedCategoryName == null
-                                      ? 'Last 6 months with activity'
-                                      : '$_selectedCategoryName, last 6 months with activity',
+                                  title:
+                                      '$_selectedAccount by month (${currency.code})',
+                                  subtitle: _selectedAccount == 'Expenses'
+                                      ? (_selectedCategoryName == null
+                                            ? 'Last 6 months with activity'
+                                            : '$_selectedCategoryName, last 6 months with activity')
+                                      : 'Last 6 months with activity',
                                   icon: Icons.show_chart,
                                   chart: _barChart(
                                     _monthlyChartData(currency),
@@ -900,94 +1065,6 @@ class _ReportScreenState extends State<ReportScreen> {
                                 const SizedBox(height: 12),
                               ],
                           ],
-                        )
-                      : filtered.isEmpty
-                      ? EmptyState(
-                          icon: _accountIcon,
-                          title: 'Nothing to report yet',
-                          subtitle:
-                              'No $_selectedAccount records match these '
-                              'filters.',
-                        )
-                      : ListView.separated(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-                          itemCount: filtered.length,
-                          separatorBuilder: (_, _) =>
-                              const SizedBox(height: 10),
-                          itemBuilder: (context, index) {
-                            final t = filtered[index];
-                            final type = t['type'] as String;
-                            final rowCurrency = AppCurrency.fromCode(
-                              t['currency'] as String?,
-                            );
-                            final amount = _selectedAccount == 'Expenses'
-                                ? _expenseAmountFor(t)
-                                : (t['amount'] as num).toDouble();
-                            final date = DateTime.parse(
-                              t['transaction_date'] as String,
-                            );
-                            final color = _rowColor(t);
-                            final isIn = _isCashIn(type);
-                            final isNeutral = _isNeutral(type);
-
-                            return AppCard(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 12,
-                              ),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  IconBadge(
-                                    icon: isIn
-                                        ? Icons.south_west
-                                        : isNeutral
-                                        ? Icons.sync_alt
-                                        : _accountIcon,
-                                    color: color,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          _rowTitle(t),
-                                          style: TextStyle(
-                                            fontSize: 14.5,
-                                            fontWeight: FontWeight.w600,
-                                            color: AppColors.ink,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 3),
-                                        Text(
-                                          _dateFormat.format(date),
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: AppColors.inkMuted,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Text(
-                                    isNeutral
-                                        ? formatMoney(amount, rowCurrency)
-                                        : '${isIn ? '+' : '-'}${formatMoney(amount, rowCurrency)}',
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                      letterSpacing: -0.2,
-                                      color: isNeutral
-                                          ? AppColors.inkMuted
-                                          : color,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
                         ),
                 ),
               ],

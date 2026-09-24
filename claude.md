@@ -1187,60 +1187,78 @@ lib/
 │   │                                 (USD)" / "Total spent (SLSH)"),
 │   │                                 side by side, always both - never
 │   │                                 blended into one number (see
-│   │                                 "Currencies" above). Payroll/
-│   │                                 Advances/Loans show a filtered
-│   │                                 transaction list (each row using
-│   │                                 its own transaction's currency, not
-│   │                                 a page-wide one); Expenses instead
-│   │                                 shows "Spending by category" (spend
-│   │                                 by category, capped to top 7 +
-│   │                                 "Other" — hidden once a single
-│   │                                 category is selected, since a
-│   │                                 breakdown of one category isn't
-│   │                                 useful and would otherwise still
-│   │                                 show *other* categories that
+│   │                                 "Currencies" above). No account tab
+│   │                                 shows a raw transaction list inline
+│   │                                 anymore — all four show chart(s)
+│   │                                 plus a "View N records"/"View N
+│   │                                 invoices" button that opens the
+│   │                                 underlying list as its own screen
+│   │                                 (account_records_screen.dart for
+│   │                                 Payroll/Advances/Loans,
+│   │                                 category_invoices_screen.dart for
+│   │                                 Expenses — see both entries below).
+│   │                                 Expenses shows "Spending by
+│   │                                 category" (spend by category,
+│   │                                 capped to top 7 + "Other" — hidden
+│   │                                 once a single category is selected,
+│   │                                 since a breakdown of one category
+│   │                                 isn't useful and would otherwise
+│   │                                 still show *other* categories that
 │   │                                 happen to share a multi-invoice
-│   │                                 transaction with the selected one)
-│   │                                 and "Spending by month" (last 6
-│   │                                 months), both bar charts built with
-│   │                                 `fl_chart`, single-hue (the app's
-│   │                                 expense red) since it's a magnitude
-│   │                                 comparison, not identity - see the
-│   │                                 dataviz skill's form-choice
-│   │                                 guidance before changing this. A
-│   │                                 bar chart can't sensibly overlay
-│   │                                 two currencies on one axis, so
-│   │                                 without a toggle to pick one,
-│   │                                 `_categoryChartData(currency)`/
-│   │                                 `_monthlyChartData(currency)` are
-│   │                                 each parameterized by currency and
-│   │                                 the screen renders one chart card
-│   │                                 per currency that actually has
-│   │                                 data in range (e.g. "Spending by
-│   │                                 category (USD)" and "Spending by
-│   │                                 category (SLSH)" stacked, or just
-│   │                                 one if only one currency has
-│   │                                 activity). Category-axis labels are
-│   │                                 boxed to their own bar's slot width
-│   │                                 (via `LayoutBuilder`) and wrap to 2
-│   │                                 lines with ellipsis - without this,
-│   │                                 fl_chart lays out each title at its
-│   │                                 natural unbounded width and several
-│   │                                 long category names overlap. Once a
-│   │                                 single category is selected, a
-│   │                                 "View N invoices" button opens
-│   │                                 category_invoices_screen.dart with
-│   │                                 every matching invoice regardless
-│   │                                 of currency (the list itself shows
-│   │                                 each invoice's own currency inline,
-│   │                                 same as everywhere else in the
-│   │                                 app). `_expenseAmountFor(t)` is the
-│   │                                 shared helper behind the summary
-│   │                                 total, the monthly chart, and the
-│   │                                 invoices list: when a category
-│   │                                 filter is active it sums only the
-│   │                                 matching `transaction_items` row(s)
-│   │                                 of a transaction, not the whole
+│   │                                 transaction with the selected one).
+│   │                                 Payroll/Advances show the same
+│   │                                 shape of chart broken down by staff
+│   │                                 instead of category ("Payroll by
+│   │                                 staff"/"Advances by staff"), and
+│   │                                 Loans by partner ("Loans by
+│   │                                 partner") — same top-7-plus-Other
+│   │                                 cap, same "hidden once you've
+│   │                                 already filtered to one staff/
+│   │                                 partner" reasoning
+│   │                                 (`_breakdownAlreadyFiltered`).
+│   │                                 These three use gross amounts only
+│   │                                 (`_headlineAmountFor(t)`: payroll
+│   │                                 paid, advance *given* not netted
+│   │                                 against deductions, loan *given*
+│   │                                 not netted against repayments) so
+│   │                                 bars stay additive and never dip
+│   │                                 negative, the same way "Spending by
+│   │                                 category" only ever adds. All four
+│   │                                 tabs then get "$Account by month"
+│   │                                 (last 6 months), same
+│   │                                 `_headlineAmountFor` figure summed
+│   │                                 per month. Every chart is built
+│   │                                 with `fl_chart`, single-hue (the
+│   │                                 app's expense red, reused across
+│   │                                 all four tabs rather than a
+│   │                                 different hue per tab) since it's a
+│   │                                 magnitude comparison, not identity
+│   │                                 - see the dataviz skill's
+│   │                                 form-choice guidance before
+│   │                                 changing this. A bar chart can't
+│   │                                 sensibly overlay two currencies on
+│   │                                 one axis, so without a toggle to
+│   │                                 pick one, every chart-data getter
+│   │                                 (`_categoryChartData`/
+│   │                                 `_breakdownChartData`/
+│   │                                 `_monthlyChartData`) is
+│   │                                 parameterized by currency and the
+│   │                                 screen renders one chart card per
+│   │                                 currency that actually has data in
+│   │                                 range. Category/breakdown-axis
+│   │                                 labels are boxed to their own bar's
+│   │                                 slot width (via `LayoutBuilder`)
+│   │                                 and wrap to 2 lines with ellipsis -
+│   │                                 without this, fl_chart lays out
+│   │                                 each title at its natural unbounded
+│   │                                 width and several long names
+│   │                                 overlap. `_expenseAmountFor(t)` (a
+│   │                                 narrower cousin of
+│   │                                 `_headlineAmountFor` used only by
+│   │                                 Expenses) sums only the matching
+│   │                                 `transaction_items` row(s) of a
+│   │                                 transaction when a category filter
+│   │                                 is active, not the whole
 │   │                                 transaction's `amount` - a
 │   │                                 multi-invoice expense matches on
 │   │                                 category if *any* of its items do,
@@ -1248,6 +1266,26 @@ lib/
 │   │                                 count every other category on that
 │   │                                 same payment too. Read-only, so
 │   │                                 visible to viewers too.
+│   ├── account_records_screen.dart — every currently filtered
+│   │                                 Payroll/Advances/Loans transaction,
+│   │                                 as cards (built by
+│   │                                 report_screen.dart's
+│   │                                 `_accountRecords` getter from
+│   │                                 whatever's currently filtered - this
+│   │                                 screen never fetches on its own),
+│   │                                 reached via report_screen.dart's
+│   │                                 "View N records" button. The
+│   │                                 Payroll/Advances/Loans counterpart
+│   │                                 of category_invoices_screen.dart
+│   │                                 below, generalized: an
+│   │                                 `AccountRecord` carries an
+│   │                                 already-formatted title (from
+│   │                                 report_screen.dart's `_rowTitle()`)
+│   │                                 rather than category-specific
+│   │                                 fields. Tapping a card opens a
+│   │                                 bottom sheet with that record's
+│   │                                 date, amount, and note. Read-only,
+│   │                                 no edit/delete here.
 │   ├── category_invoices_screen.dart — every `transaction_items` row in
 │   │                                 one expense category, as cards
 │   │                                 (built by report_screen.dart from
