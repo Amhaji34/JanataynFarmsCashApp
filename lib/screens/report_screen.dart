@@ -10,6 +10,15 @@ import 'category_invoices_screen.dart';
 
 enum _ProfitMode { cashFlow, profit }
 
+/// "Both" shows every currency side by side exactly as the rest of the
+/// app does (see claude.md's "Currencies": never blend USD and SLSH).
+/// Picking USD/SLSH instead collapses every figure on this screen into
+/// that one currency using the admin-entered exchange rate - a
+/// deliberate, visible exception scoped to this screen only, the
+/// reporting counterpart of exchange_screen.dart's "Currency exchange"
+/// exception (see claude.md).
+enum _CurrencyDisplayMode { both, usdOnly, slshOnly }
+
 class ReportScreen extends StatefulWidget {
   const ReportScreen({super.key, this.initialAccount, this.initialDateRange});
 
@@ -27,10 +36,10 @@ class ReportScreen extends StatefulWidget {
 class _ReportScreenState extends State<ReportScreen> {
   static const _accounts = [
     'Expenses',
+    'Profit',
     'Advances',
     'Payroll',
     'Loans',
-    'Profit',
   ];
 
   late String _selectedAccount = widget.initialAccount ?? 'Expenses';
@@ -58,9 +67,18 @@ class _ReportScreenState extends State<ReportScreen> {
   /// see the Profit tab's `_summary` case and its explanatory caption.
   _ProfitMode _profitMode = _ProfitMode.cashFlow;
 
+  /// "Currency display" section state - see `_CurrencyDisplayMode`.
+  /// The rate is 1 USD in SLSH, matching how a money changer would quote
+  /// it; not persisted anywhere (same "no stored exchange rate" stance
+  /// as exchange_screen.dart - it's re-entered per session/visit).
+  _CurrencyDisplayMode _displayMode = _CurrencyDisplayMode.both;
+  double _exchangeRate = 11000;
+  late final _rateController = TextEditingController(
+    text: _exchangeRate.toStringAsFixed(0),
+  );
+
   final _dateFormat = DateFormat('MMM d, yyyy');
   final _monthLabelFormat = DateFormat('MMM');
-  final _monthDropdownFormat = DateFormat('MMMM yyyy');
 
   // Single-hue sequential ramp (magnitude, not identity) in this app's
   // established expense=red color, light -> dark.
@@ -70,6 +88,12 @@ class _ReportScreenState extends State<ReportScreen> {
   void initState() {
     super.initState();
     _loadAll();
+  }
+
+  @override
+  void dispose() {
+    _rateController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadAll() async {
@@ -214,6 +238,49 @@ class _ReportScreenState extends State<ReportScreen> {
     for (final c in AppCurrency.values) c: 0.0,
   };
 
+  /// Which currencies this screen currently renders - both, in "Both"
+  /// mode, or just the one chosen in the "Currency display" section.
+  /// Every per-currency chart/card loop iterates this instead of
+  /// `AppCurrency.values` directly.
+  List<AppCurrency> get _displayCurrencies => switch (_displayMode) {
+    _CurrencyDisplayMode.both => AppCurrency.values,
+    _CurrencyDisplayMode.usdOnly => [AppCurrency.usd],
+    _CurrencyDisplayMode.slshOnly => [AppCurrency.slsh],
+  };
+
+  /// Converts one amount from its native currency into `to` using the
+  /// admin-entered exchange rate (1 USD = `_exchangeRate` SLSH) - a
+  /// no-op when they're already the same currency. Only ever called
+  /// outside "Both" mode; "Both" mode never converts (see claude.md's
+  /// "Currencies": never blend without an explicit, visible rate).
+  double _convert(double amount, AppCurrency from, AppCurrency to) {
+    if (from == to) return amount;
+    return to == AppCurrency.slsh
+        ? amount * _exchangeRate
+        : amount / _exchangeRate;
+  }
+
+  /// An amount's value in `target`: itself if `_displayMode` is "Both"
+  /// (or already native), converted otherwise. Centralizes the
+  /// "Both mode never converts, single-currency mode always does" rule
+  /// every chart/card/list data getter below applies.
+  double _displayAmount(double amount, AppCurrency native, AppCurrency target) {
+    if (_displayMode == _CurrencyDisplayMode.both) return amount;
+    return _convert(amount, native, target);
+  }
+
+  /// Collapses a per-(native)-currency map - e.g. one `_summary` entry -
+  /// into the single currently-selected display currency, converting and
+  /// summing both currencies' contributions. Only meaningful outside
+  /// "Both" mode; the summary card loop only calls this then.
+  double _collapseToDisplay(Map<AppCurrency, double> byCurrency) {
+    final target = _displayCurrencies.single;
+    return byCurrency.entries.fold<double>(
+      0,
+      (sum, e) => sum + _convert(e.value, e.key, target),
+    );
+  }
+
   /// Every summary figure is per-currency (never blended - see
   /// claude.md's "Currencies" section), so each metric maps to a
   /// USD/SLSH breakdown rather than one number. The summary card row
@@ -288,7 +355,8 @@ class _ReportScreenState extends State<ReportScreen> {
     final totals = <String, double>{};
     for (final f in _fundAdds) {
       if (!_matchesDate(f)) continue;
-      if (AppCurrency.fromCode(f['currency'] as String?) != currency) {
+      final native = AppCurrency.fromCode(f['currency'] as String?);
+      if (_displayMode == _CurrencyDisplayMode.both && native != currency) {
         continue;
       }
       final accountName = f['accounts']?['name'] as String?;
@@ -301,16 +369,26 @@ class _ReportScreenState extends State<ReportScreen> {
         'Loans' => 'Loan proceeds',
         _ => accountName ?? 'Other',
       };
-      totals[label] = (totals[label] ?? 0) + (f['amount'] as num).toDouble();
+      final amount = _displayAmount(
+        (f['amount'] as num).toDouble(),
+        native,
+        currency,
+      );
+      totals[label] = (totals[label] ?? 0) + amount;
     }
     if (_profitMode == _ProfitMode.cashFlow) {
       for (final t in _transactions) {
         if (t['type'] != 'loan_repayment' || !_matchesDate(t)) continue;
-        if (AppCurrency.fromCode(t['currency'] as String?) != currency) {
+        final native = AppCurrency.fromCode(t['currency'] as String?);
+        if (_displayMode == _CurrencyDisplayMode.both && native != currency) {
           continue;
         }
-        totals['Loan repayments'] =
-            (totals['Loan repayments'] ?? 0) + (t['amount'] as num).toDouble();
+        final amount = _displayAmount(
+          (t['amount'] as num).toDouble(),
+          native,
+          currency,
+        );
+        totals['Loan repayments'] = (totals['Loan repayments'] ?? 0) + amount;
       }
     }
     return totals.entries.where((e) => e.value != 0).toList()
@@ -339,11 +417,17 @@ class _ReportScreenState extends State<ReportScreen> {
         : profitTypes;
     for (final t in _transactions) {
       if (!types.contains(t['type']) || !_matchesDate(t)) continue;
-      if (AppCurrency.fromCode(t['currency'] as String?) != currency) {
+      final native = AppCurrency.fromCode(t['currency'] as String?);
+      if (_displayMode == _CurrencyDisplayMode.both && native != currency) {
         continue;
       }
       final label = labels[t['type']]!;
-      totals[label] = (totals[label] ?? 0) + (t['amount'] as num).toDouble();
+      final amount = _displayAmount(
+        (t['amount'] as num).toDouble(),
+        native,
+        currency,
+      );
+      totals[label] = (totals[label] ?? 0) + amount;
     }
     return totals.entries.where((e) => e.value != 0).toList()
       ..sort((a, b) => b.value.compareTo(a.value));
@@ -358,13 +442,18 @@ class _ReportScreenState extends State<ReportScreen> {
   List<MapEntry<String, double>> _categoryChartData(AppCurrency currency) {
     final totals = <String, double>{};
     for (final t in _filtered) {
-      if (AppCurrency.fromCode(t['currency'] as String?) != currency) {
+      final native = AppCurrency.fromCode(t['currency'] as String?);
+      if (_displayMode == _CurrencyDisplayMode.both && native != currency) {
         continue;
       }
       for (final item in _itemsOf(t)) {
         final category = item['category'] as String? ?? '';
         if (category.isEmpty) continue;
-        final amount = (item['amount'] as num).toDouble();
+        final amount = _displayAmount(
+          (item['amount'] as num).toDouble(),
+          native,
+          currency,
+        );
         totals[category] = (totals[category] ?? 0) + amount;
       }
     }
@@ -404,13 +493,15 @@ class _ReportScreenState extends State<ReportScreen> {
   List<MapEntry<String, double>> _breakdownChartData(AppCurrency currency) {
     final totals = <String, double>{};
     for (final t in _filtered) {
-      if (AppCurrency.fromCode(t['currency'] as String?) != currency) {
+      final native = AppCurrency.fromCode(t['currency'] as String?);
+      if (_displayMode == _CurrencyDisplayMode.both && native != currency) {
         continue;
       }
-      final amount = _headlineAmountFor(t);
-      if (amount <= 0) continue;
+      final rawAmount = _headlineAmountFor(t);
+      if (rawAmount <= 0) continue;
       final name = _breakdownNameFor(t);
       if (name == null || name.isEmpty) continue;
+      final amount = _displayAmount(rawAmount, native, currency);
       totals[name] = (totals[name] ?? 0) + amount;
     }
     return totals.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
@@ -425,11 +516,19 @@ class _ReportScreenState extends State<ReportScreen> {
       final type = t['type'] as String;
       final isIn = _isCashIn(type);
       final isNeutral = _isNeutral(type);
+      final native = AppCurrency.fromCode(t['currency'] as String?);
+      final displayCurrency = _displayMode == _CurrencyDisplayMode.both
+          ? native
+          : _displayCurrencies.single;
       return AccountRecord(
         title: _rowTitle(t),
         date: DateTime.parse(t['transaction_date'] as String),
-        amount: (t['amount'] as num).toDouble(),
-        currency: AppCurrency.fromCode(t['currency'] as String?),
+        amount: _displayAmount(
+          (t['amount'] as num).toDouble(),
+          native,
+          displayCurrency,
+        ),
+        currency: displayCurrency,
         color: _rowColor(t),
         icon: isIn
             ? Icons.south_west
@@ -461,14 +560,22 @@ class _ReportScreenState extends State<ReportScreen> {
           .where((c) => c.isNotEmpty)
           .toSet()
           .toList();
+      final native = AppCurrency.fromCode(t['currency'] as String?);
+      final displayCurrency = _displayMode == _CurrencyDisplayMode.both
+          ? native
+          : _displayCurrencies.single;
       for (final item in matching) {
         invoices.add(
           CategoryInvoice(
             transactionId: t['id'] as String,
             itemId: item['id'] as String,
             date: DateTime.parse(t['transaction_date'] as String),
-            amount: (item['amount'] as num).toDouble(),
-            currency: AppCurrency.fromCode(t['currency'] as String?),
+            amount: _displayAmount(
+              (item['amount'] as num).toDouble(),
+              native,
+              displayCurrency,
+            ),
+            currency: displayCurrency,
             itemNote: item['note'] as String?,
             transactionNote: (t['note'] as String? ?? '').trim(),
             otherCategories: otherCategories,
@@ -486,12 +593,14 @@ class _ReportScreenState extends State<ReportScreen> {
   List<MapEntry<String, double>> _monthlyChartData(AppCurrency currency) {
     final totals = <DateTime, double>{};
     for (final t in _filtered) {
-      if (AppCurrency.fromCode(t['currency'] as String?) != currency) {
+      final native = AppCurrency.fromCode(t['currency'] as String?);
+      if (_displayMode == _CurrencyDisplayMode.both && native != currency) {
         continue;
       }
       final date = DateTime.parse(t['transaction_date'] as String);
       final key = DateTime(date.year, date.month);
-      totals[key] = (totals[key] ?? 0) + _headlineAmountFor(t);
+      final amount = _displayAmount(_headlineAmountFor(t), native, currency);
+      totals[key] = (totals[key] ?? 0) + amount;
     }
     final sortedKeys = totals.keys.toList()..sort();
     final recentKeys = sortedKeys.length <= 6
@@ -601,38 +710,26 @@ class _ReportScreenState extends State<ReportScreen> {
     if (picked != null) setState(() => _dateRange = picked);
   }
 
-  /// The last 12 calendar months (this one first), offered as one-tap
-  /// picks in the date filter dropdown alongside "All time" and "Custom
-  /// range".
-  List<DateTime> get _monthOptions {
-    final now = DateTime.now();
-    return List.generate(12, (i) => DateTime(now.year, now.month - i));
-  }
-
-  String _monthKey(DateTime month) =>
-      '${month.year}-${month.month.toString().padLeft(2, '0')}';
-
   /// Which dropdown item `_dateRange` currently corresponds to - 'all'
-  /// for no filter, a month key when it's exactly one of `_monthOptions`
-  /// full calendar months (including a dashboard deep-link's
-  /// `initialDateRange`, which is always a full month), or 'custom' for
-  /// anything else (a hand-picked range, or a full month older than the
-  /// last 12 - falling back to 'custom' rather than a month not present
-  /// in the dropdown's own item list, which `DropdownButtonFormField`
-  /// requires).
+  /// for no filter, 'this_month' when it's exactly the current calendar
+  /// month (including a dashboard deep-link's `initialDateRange`, which
+  /// is always the current month), or 'custom' for anything else
+  /// (a hand-picked range, or a past/future month picked as a custom
+  /// range).
   String get _dateFilterKey {
     if (_dateRange == null) return 'all';
+    final now = DateTime.now();
     final s = _dateRange!.start;
     final e = _dateRange!.end;
-    final lastDayOfMonth = DateTime(s.year, s.month + 1, 0);
-    final isFullMonth =
+    final lastDayOfMonth = DateTime(now.year, now.month + 1, 0);
+    final isCurrentMonth =
+        s.year == now.year &&
+        s.month == now.month &&
         s.day == 1 &&
         e.year == lastDayOfMonth.year &&
         e.month == lastDayOfMonth.month &&
         e.day == lastDayOfMonth.day;
-    if (!isFullMonth) return 'custom';
-    final key = _monthKey(DateTime(s.year, s.month));
-    return _monthOptions.any((m) => _monthKey(m) == key) ? key : 'custom';
+    return isCurrentMonth ? 'this_month' : 'custom';
   }
 
   InputDecoration _dropdownDecoration(String hint) {
@@ -1168,11 +1265,10 @@ class _ReportScreenState extends State<ReportScreen> {
                             value: 'all',
                             child: Text('All time'),
                           ),
-                          for (final month in _monthOptions)
-                            DropdownMenuItem(
-                              value: _monthKey(month),
-                              child: Text(_monthDropdownFormat.format(month)),
-                            ),
+                          const DropdownMenuItem(
+                            value: 'this_month',
+                            child: Text('This month'),
+                          ),
                           DropdownMenuItem(
                             value: 'custom',
                             child: Text(
@@ -1185,22 +1281,88 @@ class _ReportScreenState extends State<ReportScreen> {
                         onChanged: (value) async {
                           if (value == 'all') {
                             setState(() => _dateRange = null);
-                          } else if (value == 'custom') {
-                            await _pickDateRange();
-                          } else {
-                            final parts = value!.split('-');
-                            final year = int.parse(parts[0]);
-                            final month = int.parse(parts[1]);
+                          } else if (value == 'this_month') {
+                            final now = DateTime.now();
                             setState(
                               () => _dateRange = DateTimeRange(
-                                start: DateTime(year, month, 1),
-                                end: DateTime(year, month + 1, 0),
+                                start: DateTime(now.year, now.month, 1),
+                                end: DateTime(now.year, now.month + 1, 0),
                               ),
                             );
+                          } else {
+                            await _pickDateRange();
                           }
                         },
                       ),
                     ],
+                  ),
+                ),
+
+                // Currency display - "Both" (default) shows every chart/
+                // card as USD and SLSH side by side, exactly as the rest
+                // of the app does; picking USD or SLSH instead collapses
+                // every figure on this screen into that one currency
+                // using the rate entered below. Applies to every tab, not
+                // just Profit.
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: AppCard(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Currency display',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.inkSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        _CurrencyDisplayModeToggle(
+                          value: _displayMode,
+                          onChanged: (mode) =>
+                              setState(() => _displayMode = mode),
+                        ),
+                        if (_displayMode != _CurrencyDisplayMode.both) ...[
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Text(
+                                '1 USD =',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.inkSecondary,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: TextField(
+                                  controller: _rateController,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  decoration: _dropdownDecoration(
+                                    '11000',
+                                  ).copyWith(suffixText: 'SLSH'),
+                                  onChanged: (value) {
+                                    final parsed = double.tryParse(
+                                      value.trim(),
+                                    );
+                                    if (parsed != null && parsed > 0) {
+                                      setState(() => _exchangeRate = parsed);
+                                    }
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
 
@@ -1231,8 +1393,11 @@ class _ReportScreenState extends State<ReportScreen> {
                         // neutral.
                         final isHeadline =
                             e.key == 'Outstanding' || e.key.startsWith('Total');
-                        return AppCurrency.values.map((currency) {
-                          final value = e.value[currency] ?? 0;
+                        return _displayCurrencies.map((currency) {
+                          final value =
+                              _displayMode == _CurrencyDisplayMode.both
+                              ? (e.value[currency] ?? 0)
+                              : _collapseToDisplay(e.value);
                           final color = isHeadline
                               ? _accountColor
                               : AppColors.inkSecondary;
@@ -1311,7 +1476,7 @@ class _ReportScreenState extends State<ReportScreen> {
                                 ),
                               ),
                               const SizedBox(height: 12),
-                              if (AppCurrency.values.every(
+                              if (_displayCurrencies.every(
                                 (c) =>
                                     _profitIncomeBreakdown(c).isEmpty &&
                                     _profitOutgoingBreakdown(c).isEmpty,
@@ -1323,7 +1488,7 @@ class _ReportScreenState extends State<ReportScreen> {
                                       'No income or outgoing in this range.',
                                 )
                               else
-                                for (final currency in AppCurrency.values)
+                                for (final currency in _displayCurrencies)
                                   if (_profitIncomeBreakdown(
                                         currency,
                                       ).isNotEmpty ||
@@ -1346,7 +1511,7 @@ class _ReportScreenState extends State<ReportScreen> {
                               // currency that actually has data gets its
                               // own chart card.
                               if (_selectedCategoryName == null) ...[
-                                for (final currency in AppCurrency.values)
+                                for (final currency in _displayCurrencies)
                                   if (_categoryChartData(
                                     currency,
                                   ).isNotEmpty) ...[
@@ -1388,7 +1553,7 @@ class _ReportScreenState extends State<ReportScreen> {
                               // is redundant once you've already filtered
                               // to one of them.
                               if (!_breakdownAlreadyFiltered) ...[
-                                for (final currency in AppCurrency.values)
+                                for (final currency in _displayCurrencies)
                                   if (_breakdownChartData(
                                     currency,
                                   ).isNotEmpty) ...[
@@ -1423,7 +1588,7 @@ class _ReportScreenState extends State<ReportScreen> {
                               ),
                               const SizedBox(height: 12),
                             ],
-                            for (final currency in AppCurrency.values)
+                            for (final currency in _displayCurrencies)
                               if (_monthlyChartData(currency).isNotEmpty) ...[
                                 _chartCard(
                                   title:
@@ -1502,6 +1667,72 @@ class _ProfitModeToggle extends StatelessWidget {
             label,
             style: TextStyle(
               fontSize: 13.5,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              color: selected ? AppColors.brandGreen : AppColors.inkSecondary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Three-segment USD/SLSH/Both pill, same visual language as
+/// CurrencyToggle/_ProfitModeToggle - see `_CurrencyDisplayMode` for what
+/// each option does.
+class _CurrencyDisplayModeToggle extends StatelessWidget {
+  const _CurrencyDisplayModeToggle({
+    required this.value,
+    required this.onChanged,
+  });
+
+  final _CurrencyDisplayMode value;
+  final ValueChanged<_CurrencyDisplayMode> onChanged;
+
+  static const _options = [
+    (_CurrencyDisplayMode.usdOnly, 'USD'),
+    (_CurrencyDisplayMode.slshOnly, 'SLSH'),
+    (_CurrencyDisplayMode.both, 'Both'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        for (final (mode, label) in _options) ...[
+          if (mode != _options.first.$1) const SizedBox(width: 8),
+          Expanded(child: _segment(mode, label)),
+        ],
+      ],
+    );
+  }
+
+  Widget _segment(_CurrencyDisplayMode mode, String label) {
+    final selected = mode == value;
+    return Material(
+      color: selected
+          ? AppColors.brandGreen.withValues(alpha: 0.10)
+          : AppColors.surface,
+      borderRadius: BorderRadius.circular(AppStyles.radiusField),
+      child: InkWell(
+        onTap: () => onChanged(mode),
+        borderRadius: BorderRadius.circular(AppStyles.radiusField),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppStyles.radiusField),
+            border: Border.all(
+              color: selected
+                  ? AppColors.brandGreen.withValues(alpha: 0.45)
+                  : AppColors.hairline,
+              width: selected ? 1.6 : 1,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
               fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
               color: selected ? AppColors.brandGreen : AppColors.inkSecondary,
             ),

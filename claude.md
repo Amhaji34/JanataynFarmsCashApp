@@ -1186,43 +1186,79 @@ lib/
 │   │                                 `RenderFlex` overflow at narrow
 │   │                                 widths). The contextual dropdown gets
 │   │                                 a clear ("×") `IconButton` once set.
-│   │                                 The date filter itself is a
+│   │                                 The date filter itself is a 3-item
 │   │                                 dropdown, not a button that opens a
-│   │                                 picker directly: "All time", each of
-│   │                                 the last 12 calendar months by name
-│   │                                 (`_monthOptions`, newest first) as
-│   │                                 one-tap picks, then "Custom range" at
-│   │                                 the bottom, which opens the same
-│   │                                 `showDateRangePicker` dialog as
-│   │                                 before. `_dateFilterKey` derives
+│   │                                 picker directly: "All time", "This
+│   │                                 month", and "Custom range" (opens the
+│   │                                 same `showDateRangePicker` dialog as
+│   │                                 before). `_dateFilterKey` derives
 │   │                                 which item is selected from
 │   │                                 `_dateRange` itself (no separate mode
 │   │                                 flag to fall out of sync) - `null` is
-│   │                                 "All time", an exact full calendar
-│   │                                 month that's still within the last 12
-│   │                                 resolves to that month's item
+│   │                                 "All time", the exact current
+│   │                                 calendar month is "This month"
 │   │                                 (including a dashboard deep-link's
-│   │                                 `initialDateRange`, always a full
-│   │                                 month, so opening Reports from a
-│   │                                 dashboard tile shows the right month
-│   │                                 pre-selected), and anything else -a
-│   │                                 hand-picked range, or a full month
-│   │                                 older than 12 months back - falls
-│   │                                 back to "Custom range" rather than a
-│   │                                 month absent from the dropdown's own
-│   │                                 item list, which `DropdownButtonFormField`
-│   │                                 requires to have a matching item. No
-│   │                                 currency toggle - unlike
-│   │                                 most of the app, this screen never
-│   │                                 lets you narrow to one currency;
-│   │                                 every summary figure is a
-│   │                                 `Map<AppCurrency, double>` and the
-│   │                                 summary card row renders **two**
-│   │                                 cards per metric (e.g. "Total spent
-│   │                                 (USD)" / "Total spent (SLSH)"),
-│   │                                 side by side, always both - never
-│   │                                 blended into one number (see
-│   │                                 "Currencies" above). No account tab
+│   │                                 `initialDateRange`, always the
+│   │                                 current month, so opening Reports
+│   │                                 from a dashboard tile shows "This
+│   │                                 month" pre-selected), and anything
+│   │                                 else - a hand-picked range, or a
+│   │                                 *past* month picked via "Custom
+│   │                                 range" - falls back to "Custom
+│   │                                 range". A "Currency display" card
+│   │                                 (`_CurrencyDisplayModeToggle`, same
+│   │                                 segmented-pill language as
+│   │                                 `CurrencyToggle`) sits below the
+│   │                                 filters and applies to every tab, not
+│   │                                 just Profit: "Both" (the default)
+│   │                                 keeps every chart/card/list on this
+│   │                                 screen showing USD and SLSH side by
+│   │                                 side, exactly as elsewhere in the app
+│   │                                 (see "Currencies" above - still never
+│   │                                 blended). Picking "USD" or "SLSH"
+│   │                                 instead collapses every figure on
+│   │                                 this screen into that one currency,
+│   │                                 converting the *other* currency's
+│   │                                 contribution using an exchange rate
+│   │                                 the admin types into a "1 USD = ___
+│   │                                 SLSH" field that only appears in that
+│   │                                 mode (default `11000`, matching a
+│   │                                 typical money-changer quote at the
+│   │                                 time this was built). This is a
+│   │                                 second deliberate, visible exception
+│   │                                 to "no exchange rate anywhere in this
+│   │                                 app" (the first is
+│   │                                 exchange_screen.dart's currency
+│   │                                 exchange), scoped to this screen's
+│   │                                 own reporting view only - the rate is
+│   │                                 local widget state, never written to
+│   │                                 the database, and re-entered each
+│   │                                 time the screen opens (same "no
+│   │                                 stored rate" stance as
+│   │                                 exchange_screen.dart). Every
+│   │                                 per-currency data getter
+│   │                                 (`_categoryChartData`/
+│   │                                 `_breakdownChartData`/
+│   │                                 `_monthlyChartData`/
+│   │                                 `_profitIncomeBreakdown`/
+│   │                                 `_profitOutgoingBreakdown`, plus
+│   │                                 `_accountRecords`/`_categoryInvoices`
+│   │                                 for the "View N records"/"View N
+│   │                                 invoices" screens) and the summary
+│   │                                 card row route every amount through
+│   │                                 `_displayAmount`/`_collapseToDisplay`,
+│   │                                 which are no-ops in "Both" mode and
+│   │                                 apply `_convert` (native currency →
+│   │                                 the chosen display currency, via the
+│   │                                 entered rate) otherwise; every
+│   │                                 `for (final currency in
+│   │                                 AppCurrency.values)` chart/card loop
+│   │                                 in this screen iterates
+│   │                                 `_displayCurrencies` instead, which
+│   │                                 collapses to a single-element list
+│   │                                 outside "Both" mode so only one
+│   │                                 chart/card renders per section
+│   │                                 instead of two. No account tab
 │   │                                 shows a raw transaction list inline
 │   │                                 anymore — all four show chart(s)
 │   │                                 plus a "View N records"/"View N
