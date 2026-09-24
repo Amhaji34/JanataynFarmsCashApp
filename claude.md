@@ -1162,7 +1162,7 @@ lib/
 │   │                                 bottom sheet for single-invoice,
 │   │                                 full screen for multi-invoice).
 │   ├── report_screen.dart         — per-account reporting, reached from
-│   │                                 the drawer (defaults to the Payroll
+│   │                                 the drawer (defaults to the Expenses
 │   │                                 tab with no date filter) or
 │   │                                 deep-linked from a dashboard stat
 │   │                                 tile via its optional
@@ -1171,11 +1171,12 @@ lib/
 │   │                                 `_selectedAccount`/`_dateRange` — the
 │   │                                 screen behaves identically either
 │   │                                 way once opened. An "Expenses /
-│   │                                 Advances / Payroll / Loans" chip
-│   │                                 selector switches which transaction
-│   │                                 type(s) are shown, with a contextual
-│   │                                 filter (staff for Payroll/Advances,
-│   │                                 partner for Loans, category for
+│   │                                 Advances / Payroll / Loans / Profit"
+│   │                                 chip selector switches which
+│   │                                 transaction type(s) are shown, with
+│   │                                 a contextual filter (staff for
+│   │                                 Payroll/Advances, partner for
+│   │                                 Loans, category for
 │   │                                 Expenses) and the date-range filter
 │   │                                 each on their own full-width row,
 │   │                                 stacked rather than sharing a row -
@@ -1306,7 +1307,60 @@ lib/
 │   │                                 category if *any* of its items do,
 │   │                                 so using the full amount would
 │   │                                 count every other category on that
-│   │                                 same payment too. Read-only, so
+│   │                                 same payment too. A fifth tab,
+│   │                                 "Profit", replaces the chart/list
+│   │                                 body entirely with a Cash
+│   │                                 Flow/Profit segmented toggle
+│   │                                 (`_ProfitModeToggle`, same visual
+│   │                                 language as `CurrencyToggle`) above
+│   │                                 three summary cards - Income,
+│   │                                 Outgoing, Net (each a
+│   │                                 `DualCurrencyStat`-style pair, one
+│   │                                 card per currency) - plus an
+│   │                                 explanatory caption underneath that
+│   │                                 changes with the mode. **Cash
+│   │                                 Flow** counts every dollar that
+│   │                                 actually moved: Income is every
+│   │                                 `account_transactions.fund_add` row
+│   │                                 (fetched separately into `_fundAdds`
+│   │                                 since it's a different table -
+│   │                                 harvest revenue via Revenue,
+│   │                                 capital via Investment, loan
+│   │                                 proceeds via Loans) plus
+│   │                                 `loan_repayment` transactions;
+│   │                                 Outgoing is `expense` + `payroll` +
+│   │                                 `loan` + `advance`. **Profit**
+│   │                                 narrows both sides to what's
+│   │                                 actually earned/spent running the
+│   │                                 farm: Income is only `fund_add` rows
+│   │                                 on the Revenue account (harvest
+│   │                                 sales), excluding capital and loan
+│   │                                 proceeds and *not* re-adding loan
+│   │                                 repayments (the original loan was
+│   │                                 never counted as a Profit-mode cost,
+│   │                                 so netting its repayment back in
+│   │                                 would double-count); Outgoing is
+│   │                                 only `expense` + `payroll` -
+│   │                                 partner loans and staff advances
+│   │                                 given are excluded since they're
+│   │                                 owed back, not spent. Net = Income −
+│   │                                 Outgoing either way. Net's card
+│   │                                 accent color is sign-aware rather
+│   │                                 than following the tab's fixed
+│   │                                 accent color like every other
+│   │                                 headline card - green when ≥ 0, the
+│   │                                 app's expense red when negative (a
+│   │                                 loss), computed per currency
+│   │                                 independently (e.g. a USD loss
+│   │                                 alongside an SLSH profit shows one
+│   │                                 red card and one green card). Both
+│   │                                 the contextual filter row and the
+│   │                                 chart/list body are skipped for
+│   │                                 this tab - there's no staff/
+│   │                                 partner/category to filter by, and
+│   │                                 nothing to chart - only the shared
+│   │                                 date-range filter still applies (via
+│   │                                 `_matchesDate`). Read-only, so
 │   │                                 visible to viewers too.
 │   ├── account_records_screen.dart — every currently filtered
 │   │                                 Payroll/Advances/Loans transaction,

@@ -8,6 +8,8 @@ import '../widgets/app_ui.dart';
 import 'account_records_screen.dart';
 import 'category_invoices_screen.dart';
 
+enum _ProfitMode { cashFlow, profit }
+
 class ReportScreen extends StatefulWidget {
   const ReportScreen({super.key, this.initialAccount, this.initialDateRange});
 
@@ -23,7 +25,13 @@ class ReportScreen extends StatefulWidget {
 }
 
 class _ReportScreenState extends State<ReportScreen> {
-  static const _accounts = ['Expenses', 'Advances', 'Payroll', 'Loans'];
+  static const _accounts = [
+    'Expenses',
+    'Advances',
+    'Payroll',
+    'Loans',
+    'Profit',
+  ];
 
   late String _selectedAccount = widget.initialAccount ?? 'Expenses';
 
@@ -34,10 +42,21 @@ class _ReportScreenState extends State<ReportScreen> {
   List<Map<String, dynamic>> _partners = [];
   List<Map<String, dynamic>> _categories = [];
 
+  /// `fund_add` rows only (account_transactions), joined to the
+  /// account's name - the "money coming in" side of the Profit tab.
+  /// Fetched separately from `_transactions` since it's a different
+  /// table (see claude.md's "Funding accounts").
+  List<Map<String, dynamic>> _fundAdds = [];
+
   String? _selectedStaffId;
   String? _selectedPartnerId;
   String? _selectedCategoryName;
   late DateTimeRange? _dateRange = widget.initialDateRange;
+
+  /// Cash Flow counts every dollar in/out including capital and loans;
+  /// Profit counts only harvest-sale revenue against operating costs -
+  /// see the Profit tab's `_summary` case and its explanatory caption.
+  _ProfitMode _profitMode = _ProfitMode.cashFlow;
 
   final _dateFormat = DateFormat('MMM d, yyyy');
   final _monthLabelFormat = DateFormat('MMM');
@@ -68,12 +87,17 @@ class _ReportScreenState extends State<ReportScreen> {
           .from('expense_categories')
           .select()
           .order('name');
+      final fundAdds = await supabase
+          .from('account_transactions')
+          .select('amount, currency, transaction_date, accounts(name)')
+          .eq('type', 'fund_add');
 
       setState(() {
         _transactions = List<Map<String, dynamic>>.from(txns);
         _staff = List<Map<String, dynamic>>.from(staff);
         _partners = List<Map<String, dynamic>>.from(partners);
         _categories = List<Map<String, dynamic>>.from(categories);
+        _fundAdds = List<Map<String, dynamic>>.from(fundAdds);
         _loading = false;
       });
     } catch (e) {
@@ -245,9 +269,66 @@ class _ReportScreenState extends State<ReportScreen> {
           total[c] = (total[c] ?? 0) + _expenseAmountFor(t);
         }
         return {'Total spent': total};
+      case 'Profit':
+        final income = _profitIncome;
+        final outgoing = _profitOutgoing;
+        final net = {
+          for (final c in AppCurrency.values)
+            c: (income[c] ?? 0) - (outgoing[c] ?? 0),
+        };
+        return {'Income': income, 'Outgoing': outgoing, 'Net': net};
       default:
         return {};
     }
+  }
+
+  /// Cash Flow counts every dollar that entered the business: harvest
+  /// revenue and every other `fund_add` (capital investment, loan
+  /// proceeds), plus partner loan repayments. Profit counts only
+  /// harvest-sale revenue (the Revenue account's own `fund_add` rows) -
+  /// capital and loan proceeds aren't earnings, and a repayment isn't
+  /// either (the original loan was never counted as an operating cost
+  /// in Profit mode, so netting the repayment back in would be double
+  /// counting the wrong direction).
+  Map<AppCurrency, double> get _profitIncome {
+    final income = _zeroByCurrency();
+    for (final f in _fundAdds) {
+      if (!_matchesDate(f)) continue;
+      final accountName = f['accounts']?['name'] as String?;
+      if (_profitMode == _ProfitMode.profit && accountName != 'Revenue') {
+        continue;
+      }
+      final c = AppCurrency.fromCode(f['currency'] as String?);
+      income[c] = (income[c] ?? 0) + (f['amount'] as num).toDouble();
+    }
+    if (_profitMode == _ProfitMode.cashFlow) {
+      for (final t in _transactions) {
+        if (t['type'] != 'loan_repayment' || !_matchesDate(t)) continue;
+        final c = AppCurrency.fromCode(t['currency'] as String?);
+        income[c] = (income[c] ?? 0) + (t['amount'] as num).toDouble();
+      }
+    }
+    return income;
+  }
+
+  /// Cash Flow counts every dollar that left the business: expenses,
+  /// payroll, loans given to partners, and advances given to staff.
+  /// Profit counts only expenses and payroll - a loan or advance given
+  /// isn't really lost money (it's owed back), so it's excluded from
+  /// operating costs.
+  Map<AppCurrency, double> get _profitOutgoing {
+    final outgoing = _zeroByCurrency();
+    const cashFlowTypes = {'expense', 'payroll', 'loan', 'advance'};
+    const profitTypes = {'expense', 'payroll'};
+    final types = _profitMode == _ProfitMode.cashFlow
+        ? cashFlowTypes
+        : profitTypes;
+    for (final t in _transactions) {
+      if (!types.contains(t['type']) || !_matchesDate(t)) continue;
+      final c = AppCurrency.fromCode(t['currency'] as String?);
+      outgoing[c] = (outgoing[c] ?? 0) + (t['amount'] as num).toDouble();
+    }
+    return outgoing;
   }
 
   /// Spend per category for one currency, sorted descending - every
@@ -443,6 +524,8 @@ class _ReportScreenState extends State<ReportScreen> {
         return AppColors.loan;
       case 'Expenses':
         return AppColors.expense;
+      case 'Profit':
+        return AppColors.cashIn;
       default:
         return AppColors.neutral;
     }
@@ -480,6 +563,8 @@ class _ReportScreenState extends State<ReportScreen> {
         return Icons.pan_tool_outlined;
       case 'Expenses':
         return Icons.receipt_long_outlined;
+      case 'Profit':
+        return Icons.trending_up;
       default:
         return Icons.more_horiz;
     }
@@ -770,6 +855,7 @@ class _ReportScreenState extends State<ReportScreen> {
                         'Advances' => AppColors.advance,
                         'Loans' => AppColors.loan,
                         'Expenses' => AppColors.expense,
+                        'Profit' => AppColors.cashIn,
                         _ => AppColors.neutral,
                       };
                       return ChoiceChip(
@@ -959,6 +1045,15 @@ class _ReportScreenState extends State<ReportScreen> {
                   ),
                 ),
 
+                if (_selectedAccount == 'Profit')
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: _ProfitModeToggle(
+                      value: _profitMode,
+                      onChanged: (mode) => setState(() => _profitMode = mode),
+                    ),
+                  ),
+
                 // Summary cards - two per metric, one per currency, since
                 // there's no toggle anymore to pick just one (see
                 // claude.md's "Currencies": never blend USD and SLSH).
@@ -972,18 +1067,28 @@ class _ReportScreenState extends State<ReportScreen> {
                       // the account's accent; supporting figures stay
                       // neutral.
                       final isHeadline =
-                          e.key == 'Outstanding' || e.key.startsWith('Total');
-                      final color = isHeadline
-                          ? _accountColor
-                          : AppColors.inkSecondary;
+                          e.key == 'Outstanding' ||
+                          e.key == 'Net' ||
+                          e.key.startsWith('Total');
                       return AppCurrency.values.map((currency) {
                         final value = e.value[currency] ?? 0;
+                        // Net can go negative (a loss) - the account's
+                        // usual accent (a cheerful green for Profit)
+                        // would be misleading on a loss, so this one
+                        // card's color follows the value's own sign
+                        // instead of the tab's fixed accent.
+                        final accent = e.key == 'Net'
+                            ? (value < 0 ? AppColors.expense : AppColors.cashIn)
+                            : _accountColor;
+                        final color = isHeadline
+                            ? accent
+                            : AppColors.inkSecondary;
                         return Container(
                           width: 138,
                           margin: const EdgeInsets.only(right: 10),
                           padding: const EdgeInsets.all(12),
                           decoration: isHeadline
-                              ? AppStyles.accentCard(_accountColor)
+                              ? AppStyles.accentCard(accent)
                               : AppStyles.card,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1020,7 +1125,7 @@ class _ReportScreenState extends State<ReportScreen> {
                 const SizedBox(height: 12),
 
                 Expanded(
-                  child: filtered.isEmpty
+                  child: (_selectedAccount != 'Profit' && filtered.isEmpty)
                       ? EmptyState(
                           icon: _accountIcon,
                           title: 'Nothing to report yet',
@@ -1031,7 +1136,27 @@ class _ReportScreenState extends State<ReportScreen> {
                       : ListView(
                           padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
                           children: [
-                            if (_selectedAccount == 'Expenses') ...[
+                            if (_selectedAccount == 'Profit') ...[
+                              Text(
+                                _profitMode == _ProfitMode.cashFlow
+                                    ? 'Every dollar in and out of the '
+                                          'business: harvest revenue, capital '
+                                          'investment, loan proceeds, and loan '
+                                          'repayments count as income; '
+                                          'expenses, payroll, loans given, and '
+                                          'advances given count as outgoing.'
+                                    : 'Only harvest-sale revenue counts as '
+                                          'income; only expenses and payroll '
+                                          'count as outgoing. Capital, loans, '
+                                          'and advances are excluded - they\'re '
+                                          'owed back, not earnings or costs.',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: AppColors.inkMuted,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ] else if (_selectedAccount == 'Expenses') ...[
                               // A category breakdown doesn't make sense
                               // once you've already filtered to one
                               // category - it would otherwise still show
@@ -1144,6 +1269,68 @@ class _ReportScreenState extends State<ReportScreen> {
                 ),
               ],
             ),
+    );
+  }
+}
+
+/// Two-segment Cash Flow/Profit pill, matching CurrencyToggle's visual
+/// style (lib/utils/currency.dart) - see the Profit tab's `_summary`
+/// case for what each mode actually counts.
+class _ProfitModeToggle extends StatelessWidget {
+  const _ProfitModeToggle({required this.value, required this.onChanged});
+
+  final _ProfitMode value;
+  final ValueChanged<_ProfitMode> onChanged;
+
+  static const _options = [
+    (_ProfitMode.cashFlow, 'Cash Flow'),
+    (_ProfitMode.profit, 'Profit'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        for (final (mode, label) in _options) ...[
+          if (mode != _options.first.$1) const SizedBox(width: 10),
+          Expanded(child: _segment(mode, label)),
+        ],
+      ],
+    );
+  }
+
+  Widget _segment(_ProfitMode mode, String label) {
+    final selected = mode == value;
+    return Material(
+      color: selected
+          ? AppColors.brandGreen.withValues(alpha: 0.10)
+          : AppColors.surface,
+      borderRadius: BorderRadius.circular(AppStyles.radiusField),
+      child: InkWell(
+        onTap: () => onChanged(mode),
+        borderRadius: BorderRadius.circular(AppStyles.radiusField),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppStyles.radiusField),
+            border: Border.all(
+              color: selected
+                  ? AppColors.brandGreen.withValues(alpha: 0.45)
+                  : AppColors.hairline,
+              width: selected ? 1.6 : 1,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13.5,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              color: selected ? AppColors.brandGreen : AppColors.inkSecondary,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
