@@ -241,8 +241,7 @@ class _ReportScreenState extends State<ReportScreen> {
     for (final t in _filtered) {
       final date = DateTime.parse(t['transaction_date'] as String);
       final key = DateTime(date.year, date.month);
-      final amount = (t['amount'] as num).toDouble();
-      totals[key] = (totals[key] ?? 0) + amount;
+      totals[key] = (totals[key] ?? 0) + _expenseAmountFor(t);
     }
     final sortedKeys = totals.keys.toList()..sort();
     final recentKeys = sortedKeys.length <= 6
@@ -616,6 +615,7 @@ class _ReportScreenState extends State<ReportScreen> {
                           child: DropdownButtonFormField<String>(
                             initialValue: _selectedStaffId,
                             decoration: _dropdownDecoration('All staff'),
+                            isExpanded: true,
                             hint: const Text('All staff'),
                             items: _staff
                                 .map(
@@ -634,6 +634,7 @@ class _ReportScreenState extends State<ReportScreen> {
                           child: DropdownButtonFormField<String>(
                             initialValue: _selectedPartnerId,
                             decoration: _dropdownDecoration('All partners'),
+                            isExpanded: true,
                             hint: const Text('All partners'),
                             items: _partners
                                 .map(
@@ -652,6 +653,7 @@ class _ReportScreenState extends State<ReportScreen> {
                           child: DropdownButtonFormField<String>(
                             initialValue: _selectedCategoryName,
                             decoration: _dropdownDecoration('All categories'),
+                            isExpanded: true,
                             hint: const Text('All categories'),
                             items: _categories
                                 .map(
@@ -762,16 +764,26 @@ class _ReportScreenState extends State<ReportScreen> {
                       ? ListView(
                           padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
                           children: [
-                            _chartCard(
-                              title: 'Spending by category',
-                              subtitle: 'Top categories in this range',
-                              icon: Icons.pie_chart_outline,
-                              chart: _barChart(_categoryChartData),
-                            ),
-                            const SizedBox(height: 12),
+                            // A category breakdown doesn't make sense once
+                            // you've already filtered to one category - it
+                            // would otherwise still show the *other*
+                            // categories that happen to share a
+                            // multi-invoice transaction with the selected
+                            // one, which reads as "why are these here?".
+                            if (_selectedCategoryName == null) ...[
+                              _chartCard(
+                                title: 'Spending by category',
+                                subtitle: 'Top categories in this range',
+                                icon: Icons.pie_chart_outline,
+                                chart: _barChart(_categoryChartData),
+                              ),
+                              const SizedBox(height: 12),
+                            ],
                             _chartCard(
                               title: 'Spending by month',
-                              subtitle: 'Last 6 months with activity',
+                              subtitle: _selectedCategoryName == null
+                                  ? 'Last 6 months with activity'
+                                  : '$_selectedCategoryName, last 6 months with activity',
                               icon: Icons.show_chart,
                               chart: _barChart(_monthlyChartData),
                             ),
