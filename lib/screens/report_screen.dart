@@ -64,14 +64,19 @@ class _ReportScreenState extends State<ReportScreen> {
   List<Map<String, dynamic>> _harvests = [];
   List<Map<String, dynamic>> _harvestSales = [];
 
-  /// Every `customer_payments` row (just `sale_id`/`amount`/`currency` -
-  /// enough to attribute a payment back to the sale it was made against,
-  /// for the Paid/Unpaid chart below). A payment's `sale_id` is only ever
-  /// set for the upfront payment recorded at sale time; a later
-  /// standalone payment has `sale_id: null` and reduces the customer's
-  /// overall balance instead (see claude.md's `customer_payments` table
-  /// doc), so this chart can only ever reflect upfront payments, not
-  /// later ones - see the Paid/Unpaid chart's own caption.
+  /// Every `customer_payments` row (`customer_id`/`amount`/`currency` -
+  /// for the Paid/Unpaid chart below). Deliberately keyed by
+  /// `customer_id`, not `sale_id`: a payment is only ever tied to one
+  /// specific sale for the upfront payment recorded at sale time - a
+  /// later standalone payment has `sale_id: null` and reduces the
+  /// customer's overall balance instead (see claude.md's
+  /// `customer_payments` table doc), so summing by `sale_id` would silently
+  /// drop every later payment. Summing by customer instead, against that
+  /// customer's *total* sold value (not just their sales within the
+  /// current date filter), is the same "outstanding, calculated globally,
+  /// never per-sale" approach `harvests_screen.dart`/
+  /// `customers_screen.dart` already use - see the Paid/Unpaid chart's own
+  /// caption.
   List<Map<String, dynamic>> _customerPayments = [];
 
   String? _selectedStaffId;
@@ -153,7 +158,7 @@ class _ReportScreenState extends State<ReportScreen> {
           .order('sale_date', ascending: false);
       final customerPayments = await supabase
           .from('customer_payments')
-          .select('sale_id, amount, currency');
+          .select('customer_id, amount, currency');
 
       setState(() {
         _transactions = List<Map<String, dynamic>>.from(txns);
@@ -462,37 +467,72 @@ class _ReportScreenState extends State<ReportScreen> {
     }).toList();
   }
 
-  /// "Paid" vs "Unpaid" for one currency, for the sales in
-  /// `_filteredHarvestSales` - Paid sums `customer_payments` rows whose
-  /// `sale_id` matches one of those sales (only ever the upfront payment
+  /// "Paid" vs "Unpaid" for one currency, for every customer who has at
+  /// least one sale in `_filteredHarvestSales`. A payment can only ever
+  /// be attributed to a *specific sale* when it's the upfront payment
   /// recorded at sale time - a later standalone payment has `sale_id:
-  /// null` and reduces the customer's overall balance instead, not one
-  /// sale's, so it can't be attributed back here; the chart's own
-  /// caption explains this). Unpaid is what's left of those sales' total
-  /// fee-adjusted value, floored at 0.
+  /// null` and reduces the customer's *overall* balance instead (see
+  /// claude.md's `customer_payments` table doc), so summing payments by
+  /// `sale_id` would silently miss every later one. This instead sums
+  /// each such customer's *entire* sold value and *entire* payment
+  /// history (not just what falls within the current date filter) and
+  /// nets them per customer, clamped at 0 before summing across
+  /// customers - the same "outstanding, calculated globally, per
+  /// customer, never per-sale or per-period" approach used everywhere
+  /// else this figure appears (`harvests_screen.dart`,
+  /// `customers_screen.dart`, `customer_detail_screen.dart`). The date
+  /// filter still decides *which customers* are included (only those
+  /// with a sale in range), just not which of their sales/payments count
+  /// once included.
   List<MapEntry<String, double>> _harvestPaidUnpaidChartData(
     AppCurrency currency,
   ) {
-    final sales = _filteredHarvestSales;
-    final saleIds = sales.map((s) => s['id'] as String).toSet();
-    var totalValue = 0.0;
-    for (final s in sales) {
+    final customerIds = _filteredHarvestSales
+        .map((s) => s['customer_id'] as String)
+        .toSet();
+    if (customerIds.isEmpty) {
+      return [MapEntry('Paid', 0), MapEntry('Unpaid', 0)];
+    }
+
+    final soldByCustomer = <String, double>{};
+    for (final s in _harvestSales) {
+      final customerId = s['customer_id'] as String;
+      if (!customerIds.contains(customerId)) continue;
       final native = AppCurrency.fromCode(s['currency'] as String?);
       if (_displayMode == _CurrencyDisplayMode.both && native != currency) {
         continue;
       }
-      totalValue += _displayAmount(_saleValue(s), native, currency);
+      final value = _displayAmount(_saleValue(s), native, currency);
+      soldByCustomer[customerId] = (soldByCustomer[customerId] ?? 0) + value;
     }
-    var paid = 0.0;
+
+    final paidByCustomer = <String, double>{};
     for (final p in _customerPayments) {
-      if (!saleIds.contains(p['sale_id'])) continue;
+      final customerId = p['customer_id'] as String;
+      if (!customerIds.contains(customerId)) continue;
       final native = AppCurrency.fromCode(p['currency'] as String?);
       if (_displayMode == _CurrencyDisplayMode.both && native != currency) {
         continue;
       }
-      paid += _displayAmount((p['amount'] as num).toDouble(), native, currency);
+      final amount = _displayAmount(
+        (p['amount'] as num).toDouble(),
+        native,
+        currency,
+      );
+      paidByCustomer[customerId] = (paidByCustomer[customerId] ?? 0) + amount;
     }
-    final unpaid = (totalValue - paid).clamp(0.0, double.infinity);
+
+    var paid = 0.0;
+    var unpaid = 0.0;
+    for (final customerId in customerIds) {
+      final sold = soldByCustomer[customerId] ?? 0;
+      final rawPaid = paidByCustomer[customerId] ?? 0;
+      // Capped at what was actually sold - an overpayment/credit balance
+      // shouldn't inflate "Paid" past 100% or show up as negative Unpaid.
+      final customerPaid = rawPaid.clamp(0.0, sold);
+      paid += customerPaid;
+      unpaid += sold - customerPaid;
+    }
     return [MapEntry('Paid', paid), MapEntry('Unpaid', unpaid)];
   }
 
@@ -1888,9 +1928,9 @@ class _ReportScreenState extends State<ReportScreen> {
                                       title:
                                           'Paid vs unpaid (${currency.code})',
                                       subtitle:
-                                          'Upfront payments only - a later '
-                                          "standalone payment isn't tied "
-                                          'to one sale',
+                                          "Customers with a sale in this "
+                                          "range, by their overall balance "
+                                          "(not just this range's sales)",
                                       icon: Icons.pie_chart_outline,
                                       chart: _barChart(
                                         _harvestPaidUnpaidChartData(currency),

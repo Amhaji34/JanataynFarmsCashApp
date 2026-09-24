@@ -1498,23 +1498,47 @@ lib/
 │   │                                 doc above) - then, also per
 │   │                                 currency, "Paid vs unpaid"
 │   │                                 (`_harvestPaidUnpaidChartData`, a
-│   │                                 fixed 2-bar "Paid"/"Unpaid" chart):
-│   │                                 Paid sums `_customerPayments`
-│   │                                 (fetched separately in `_loadAll`,
-│   │                                 just `sale_id`/`amount`/`currency`)
-│   │                                 whose `sale_id` matches one of the
-│   │                                 filtered sales, and Unpaid is what's
-│   │                                 left of those sales' total value,
-│   │                                 floored at 0. This can only ever
-│   │                                 reflect a sale's *upfront* payment -
-│   │                                 a later standalone payment has
+│   │                                 fixed 2-bar "Paid"/"Unpaid" chart).
+│   │                                 This one deliberately does **not**
+│   │                                 sum `_customerPayments` (fetched
+│   │                                 separately in `_loadAll`, just
+│   │                                 `customer_id`/`amount`/`currency`) by
+│   │                                 matching a payment's `sale_id` to one
+│   │                                 of the filtered sales - an earlier
+│   │                                 version did exactly that and
+│   │                                 undercounted badly, since a payment
+│   │                                 only ever carries a `sale_id` for the
+│   │                                 upfront payment recorded at sale
+│   │                                 time; a later standalone payment has
 │   │                                 `sale_id: null` and reduces the
-│   │                                 customer's overall balance instead,
-│   │                                 never one specific sale's (see the
-│   │                                 `customer_payments` table doc
-│   │                                 above), so it can't be attributed
-│   │                                 back to a sale here; the chart's own
-│   │                                 subtitle says so. Then a "View N
+│   │                                 customer's *overall* balance instead
+│   │                                 (see the `customer_payments` table
+│   │                                 doc above), so summing by `sale_id`
+│   │                                 silently dropped every later payment.
+│   │                                 Instead: for every customer with at
+│   │                                 least one sale in the filtered range,
+│   │                                 it sums that customer's *entire*
+│   │                                 sold value and *entire* payment
+│   │                                 history (not just what falls in the
+│   │                                 date filter), nets them per customer
+│   │                                 (payment clamped to that customer's
+│   │                                 sold value first, so a credit balance
+│   │                                 can't inflate Paid past 100% or push
+│   │                                 Unpaid negative), then sums Paid/
+│   │                                 Unpaid across those customers - the
+│   │                                 same "outstanding, calculated
+│   │                                 globally per customer, never per-sale
+│   │                                 or per-period" approach
+│   │                                 `harvests_screen.dart`/
+│   │                                 `customers_screen.dart`/
+│   │                                 `customer_detail_screen.dart` already
+│   │                                 use for this figure. The date filter
+│   │                                 still decides *which customers* are
+│   │                                 included (only those with a sale in
+│   │                                 range) - just not which of their
+│   │                                 sales/payments count once included;
+│   │                                 the chart's own subtitle says so.
+│   │                                 Then a "View N
 │   │                                 sales" button (`_openHarvestSales`)
 │   │                                 into `account_records_screen.dart`,
 │   │                                 reusing that screen rather than a
