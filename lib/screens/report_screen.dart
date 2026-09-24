@@ -150,6 +150,20 @@ class _ReportScreenState extends State<ReportScreen> {
     }).toList();
   }
 
+  /// A transaction's amount for display/summing purposes. When a category
+  /// filter is active, a multi-invoice transaction can match on just one
+  /// of its several line items - summing/showing the transaction's full
+  /// amount in that case would double-count the categories that aren't
+  /// actually selected, so this sums only the matching item(s) instead.
+  double _expenseAmountFor(Map<String, dynamic> t) {
+    if (_selectedAccount == 'Expenses' && _selectedCategoryName != null) {
+      return _itemsOf(t)
+          .where((i) => i['category'] == _selectedCategoryName)
+          .fold<double>(0, (sum, i) => sum + (i['amount'] as num).toDouble());
+    }
+    return (t['amount'] as num).toDouble();
+  }
+
   Map<String, double> get _summary {
     final filtered = _filtered;
     switch (_selectedAccount) {
@@ -188,7 +202,7 @@ class _ReportScreenState extends State<ReportScreen> {
       case 'Expenses':
         final total = filtered.fold<double>(
           0,
-          (sum, t) => sum + (t['amount'] as num).toDouble(),
+          (sum, t) => sum + _expenseAmountFor(t),
         );
         return {'Total spent': total};
       default:
@@ -779,7 +793,9 @@ class _ReportScreenState extends State<ReportScreen> {
                           itemBuilder: (context, index) {
                             final t = filtered[index];
                             final type = t['type'] as String;
-                            final amount = (t['amount'] as num).toDouble();
+                            final amount = _selectedAccount == 'Expenses'
+                                ? _expenseAmountFor(t)
+                                : (t['amount'] as num).toDouble();
                             final date = DateTime.parse(
                               t['transaction_date'] as String,
                             );
