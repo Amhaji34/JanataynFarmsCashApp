@@ -23,7 +23,7 @@ class ReportScreen extends StatefulWidget {
 }
 
 class _ReportScreenState extends State<ReportScreen> {
-  static const _accounts = ['Payroll', 'Advances', 'Loans', 'Expenses'];
+  static const _accounts = ['Expenses', 'Advances', 'Payroll', 'Loans'];
 
   late String _selectedAccount = widget.initialAccount ?? 'Payroll';
 
