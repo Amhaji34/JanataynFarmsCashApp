@@ -400,6 +400,23 @@ class _ReportScreenState extends State<ReportScreen> {
     }
     final maxValue = data.map((e) => e.value).reduce((a, b) => a > b ? a : b);
 
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Each label gets boxed to its own bar's slot width - without
+        // this, fl_chart lays out each title as its natural (unbounded)
+        // text width, so on a category axis with several long names they
+        // overlap their neighbors instead of wrapping or truncating.
+        final slotWidth = constraints.maxWidth / data.length;
+        return _buildBarChart(data, maxValue, slotWidth);
+      },
+    );
+  }
+
+  Widget _buildBarChart(
+    List<MapEntry<String, double>> data,
+    double maxValue,
+    double slotWidth,
+  ) {
     return BarChart(
       BarChartData(
         maxY: maxValue == 0 ? 1 : maxValue * 1.22,
@@ -442,20 +459,26 @@ class _ReportScreenState extends State<ReportScreen> {
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 30,
+              reservedSize: 34,
               getTitlesWidget: (value, meta) {
                 final index = value.toInt();
                 if (index < 0 || index >= data.length) return const SizedBox();
                 return Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    data[index].key,
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.inkMuted,
+                  padding: const EdgeInsets.only(top: 6),
+                  child: SizedBox(
+                    width: slotWidth - 4,
+                    child: Text(
+                      data[index].key,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.inkMuted,
+                        height: 1.15,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    overflow: TextOverflow.ellipsis,
                   ),
                 );
               },
