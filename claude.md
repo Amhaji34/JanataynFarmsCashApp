@@ -1177,18 +1177,42 @@ lib/
 │   │                                 a contextual filter (staff for
 │   │                                 Payroll/Advances, partner for
 │   │                                 Loans, category for
-│   │                                 Expenses) and the date-range filter
-│   │                                 each on their own full-width row,
-│   │                                 stacked rather than sharing a row -
-│   │                                 a picked date range's label is long
-│   │                                 enough that splitting the row left
-│   │                                 neither one enough space (visible as
-│   │                                 a `RenderFlex` overflow at narrow
-│   │                                 widths). Both rows get a clear ("×")
-│   │                                 `IconButton` once set, same pattern
-│   │                                 for the contextual filter as the
-│   │                                 date range already had. No currency
-│   │                                 toggle - unlike
+│   │                                 Expenses) and the date filter each on
+│   │                                 their own full-width row, stacked
+│   │                                 rather than sharing a row - a picked
+│   │                                 date range's label is long enough
+│   │                                 that splitting the row left neither
+│   │                                 one enough space (visible as a
+│   │                                 `RenderFlex` overflow at narrow
+│   │                                 widths). The contextual dropdown gets
+│   │                                 a clear ("×") `IconButton` once set.
+│   │                                 The date filter itself is a
+│   │                                 dropdown, not a button that opens a
+│   │                                 picker directly: "All time", each of
+│   │                                 the last 12 calendar months by name
+│   │                                 (`_monthOptions`, newest first) as
+│   │                                 one-tap picks, then "Custom range" at
+│   │                                 the bottom, which opens the same
+│   │                                 `showDateRangePicker` dialog as
+│   │                                 before. `_dateFilterKey` derives
+│   │                                 which item is selected from
+│   │                                 `_dateRange` itself (no separate mode
+│   │                                 flag to fall out of sync) - `null` is
+│   │                                 "All time", an exact full calendar
+│   │                                 month that's still within the last 12
+│   │                                 resolves to that month's item
+│   │                                 (including a dashboard deep-link's
+│   │                                 `initialDateRange`, always a full
+│   │                                 month, so opening Reports from a
+│   │                                 dashboard tile shows the right month
+│   │                                 pre-selected), and anything else -a
+│   │                                 hand-picked range, or a full month
+│   │                                 older than 12 months back - falls
+│   │                                 back to "Custom range" rather than a
+│   │                                 month absent from the dropdown's own
+│   │                                 item list, which `DropdownButtonFormField`
+│   │                                 requires to have a matching item. No
+│   │                                 currency toggle - unlike
 │   │                                 most of the app, this screen never
 │   │                                 lets you narrow to one currency;
 │   │                                 every summary figure is a
@@ -1308,58 +1332,60 @@ lib/
 │   │                                 so using the full amount would
 │   │                                 count every other category on that
 │   │                                 same payment too. A fifth tab,
-│   │                                 "Profit", replaces the chart/list
-│   │                                 body entirely with a Cash
-│   │                                 Flow/Profit segmented toggle
-│   │                                 (`_ProfitModeToggle`, same visual
-│   │                                 language as `CurrencyToggle`) above
-│   │                                 three summary cards - Income,
-│   │                                 Outgoing, Net (each a
-│   │                                 `DualCurrencyStat`-style pair, one
-│   │                                 card per currency) - plus an
-│   │                                 explanatory caption underneath that
-│   │                                 changes with the mode. **Cash
-│   │                                 Flow** counts every dollar that
-│   │                                 actually moved: Income is every
-│   │                                 `account_transactions.fund_add` row
-│   │                                 (fetched separately into `_fundAdds`
-│   │                                 since it's a different table -
-│   │                                 harvest revenue via Revenue,
-│   │                                 capital via Investment, loan
-│   │                                 proceeds via Loans) plus
-│   │                                 `loan_repayment` transactions;
-│   │                                 Outgoing is `expense` + `payroll` +
-│   │                                 `loan` + `advance`. **Profit**
-│   │                                 narrows both sides to what's
-│   │                                 actually earned/spent running the
-│   │                                 farm: Income is only `fund_add` rows
-│   │                                 on the Revenue account (harvest
-│   │                                 sales), excluding capital and loan
-│   │                                 proceeds and *not* re-adding loan
-│   │                                 repayments (the original loan was
-│   │                                 never counted as a Profit-mode cost,
-│   │                                 so netting its repayment back in
-│   │                                 would double-count); Outgoing is
-│   │                                 only `expense` + `payroll` -
-│   │                                 partner loans and staff advances
-│   │                                 given are excluded since they're
-│   │                                 owed back, not spent. Net = Income −
-│   │                                 Outgoing either way. Net's card
-│   │                                 accent color is sign-aware rather
-│   │                                 than following the tab's fixed
-│   │                                 accent color like every other
-│   │                                 headline card - green when ≥ 0, the
+│   │                                 "Profit", replaces both the summary
+│   │                                 card row and the chart/list body
+│   │                                 with a Cash Flow/Profit segmented
+│   │                                 toggle (`_ProfitModeToggle`, same
+│   │                                 visual language as `CurrencyToggle`),
+│   │                                 an explanatory caption that changes
+│   │                                 with the mode, and one
+│   │                                 income-statement-style card per
+│   │                                 currency that actually has data
+│   │                                 (`_profitStatementCard`) - an Income
+│   │                                 section, an Outgoing section, then
+│   │                                 Total income/Total outgoing/Net at
+│   │                                 the bottom, styled after the
+│   │                                 Investopedia income-statement layout
+│   │                                 the user referenced, minus a separate
+│   │                                 tax line (this app has no tax concept
+│   │                                 of its own - a "Tax" expense category
+│   │                                 just folds into the single "Expenses"
+│   │                                 row like every other category, not
+│   │                                 broken out). Each section is built by
+│   │                                 its own breakdown getter
+│   │                                 (`_profitIncomeBreakdown`/
+│   │                                 `_profitOutgoingBreakdown`), grouping
+│   │                                 by *source* rather than a single
+│   │                                 total: Income groups `_fundAdds` by
+│   │                                 account name ("Harvest sales" for
+│   │                                 Revenue, "Investment", "Loan
+│   │                                 proceeds" for Loans) plus a "Loan
+│   │                                 repayments" line, all Cash-Flow-mode
+│   │                                 only except "Harvest sales" which
+│   │                                 Profit mode always keeps; Outgoing
+│   │                                 groups transactions by type
+│   │                                 ("Expenses", "Payroll", plus "Loans
+│   │                                 given"/"Advances given" in Cash Flow
+│   │                                 mode only). Each card's Total
+│   │                                 income/Total outgoing are just that
+│   │                                 breakdown's own entries summed
+│   │                                 (rather than duplicating the
+│   │                                 filtering logic in a separate
+│   │                                 getter), and Net's color is
+│   │                                 sign-aware rather than the tab's
+│   │                                 fixed accent - green when ≥ 0, the
 │   │                                 app's expense red when negative (a
-│   │                                 loss), computed per currency
-│   │                                 independently (e.g. a USD loss
-│   │                                 alongside an SLSH profit shows one
-│   │                                 red card and one green card). Both
-│   │                                 the contextual filter row and the
-│   │                                 chart/list body are skipped for
-│   │                                 this tab - there's no staff/
-│   │                                 partner/category to filter by, and
-│   │                                 nothing to chart - only the shared
-│   │                                 date-range filter still applies (via
+│   │                                 loss), computed independently per
+│   │                                 currency (e.g. a USD loss alongside
+│   │                                 an SLSH profit shows one red card and
+│   │                                 one green card). Both the contextual
+│   │                                 filter row and the account-chip
+│   │                                 accent-colored summary cards above
+│   │                                 the body are skipped for this tab -
+│   │                                 there's no staff/partner/category to
+│   │                                 filter by, and the statement cards
+│   │                                 already carry the totals - only the
+│   │                                 shared date filter still applies (via
 │   │                                 `_matchesDate`). Read-only, so
 │   │                                 visible to viewers too.
 │   ├── account_records_screen.dart — every currently filtered

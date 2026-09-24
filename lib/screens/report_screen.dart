@@ -60,6 +60,7 @@ class _ReportScreenState extends State<ReportScreen> {
 
   final _dateFormat = DateFormat('MMM d, yyyy');
   final _monthLabelFormat = DateFormat('MMM');
+  final _monthDropdownFormat = DateFormat('MMMM yyyy');
 
   // Single-hue sequential ramp (magnitude, not identity) in this app's
   // established expense=red color, light -> dark.
@@ -272,55 +273,65 @@ class _ReportScreenState extends State<ReportScreen> {
           total[c] = (total[c] ?? 0) + _expenseAmountFor(t);
         }
         return {'Total spent': total};
-      case 'Profit':
-        final income = _profitIncome;
-        final outgoing = _profitOutgoing;
-        final net = {
-          for (final c in AppCurrency.values)
-            c: (income[c] ?? 0) - (outgoing[c] ?? 0),
-        };
-        return {'Income': income, 'Outgoing': outgoing, 'Net': net};
       default:
         return {};
     }
   }
 
-  /// Cash Flow counts every dollar that entered the business: harvest
-  /// revenue and every other `fund_add` (capital investment, loan
-  /// proceeds), plus partner loan repayments. Profit counts only
-  /// harvest-sale revenue (the Revenue account's own `fund_add` rows) -
-  /// capital and loan proceeds aren't earnings, and a repayment isn't
-  /// either (the original loan was never counted as an operating cost
-  /// in Profit mode, so netting the repayment back in would be double
-  /// counting the wrong direction).
-  Map<AppCurrency, double> get _profitIncome {
-    final income = _zeroByCurrency();
+  /// Income broken down by where it came from, for one currency, sorted
+  /// descending, zero entries dropped - the Profit tab's statement table
+  /// groups Cash Flow's `fund_add` rows by their account name (Revenue's
+  /// "Harvest sales" is the only source Profit mode keeps) and adds a
+  /// "Loan repayments" line in Cash Flow mode only. `_profitIncome`
+  /// below sums this list rather than duplicating the filtering logic.
+  List<MapEntry<String, double>> _profitIncomeBreakdown(AppCurrency currency) {
+    final totals = <String, double>{};
     for (final f in _fundAdds) {
       if (!_matchesDate(f)) continue;
+      if (AppCurrency.fromCode(f['currency'] as String?) != currency) {
+        continue;
+      }
       final accountName = f['accounts']?['name'] as String?;
       if (_profitMode == _ProfitMode.profit && accountName != 'Revenue') {
         continue;
       }
-      final c = AppCurrency.fromCode(f['currency'] as String?);
-      income[c] = (income[c] ?? 0) + (f['amount'] as num).toDouble();
+      final label = switch (accountName) {
+        'Revenue' => 'Harvest sales',
+        'Investment' => 'Investment',
+        'Loans' => 'Loan proceeds',
+        _ => accountName ?? 'Other',
+      };
+      totals[label] = (totals[label] ?? 0) + (f['amount'] as num).toDouble();
     }
     if (_profitMode == _ProfitMode.cashFlow) {
       for (final t in _transactions) {
         if (t['type'] != 'loan_repayment' || !_matchesDate(t)) continue;
-        final c = AppCurrency.fromCode(t['currency'] as String?);
-        income[c] = (income[c] ?? 0) + (t['amount'] as num).toDouble();
+        if (AppCurrency.fromCode(t['currency'] as String?) != currency) {
+          continue;
+        }
+        totals['Loan repayments'] =
+            (totals['Loan repayments'] ?? 0) + (t['amount'] as num).toDouble();
       }
     }
-    return income;
+    return totals.entries.where((e) => e.value != 0).toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
   }
 
-  /// Cash Flow counts every dollar that left the business: expenses,
-  /// payroll, loans given to partners, and advances given to staff.
-  /// Profit counts only expenses and payroll - a loan or advance given
-  /// isn't really lost money (it's owed back), so it's excluded from
-  /// operating costs.
-  Map<AppCurrency, double> get _profitOutgoing {
-    final outgoing = _zeroByCurrency();
+  /// Outgoing broken down by type, for one currency, sorted descending,
+  /// zero entries dropped. Deliberately doesn't split Expenses by
+  /// category the way the Expenses tab's own chart does - this table is
+  /// about where cash goes at the type level (expenses vs. payroll vs.
+  /// loans/advances given), not a category audit.
+  List<MapEntry<String, double>> _profitOutgoingBreakdown(
+    AppCurrency currency,
+  ) {
+    final totals = <String, double>{};
+    const labels = {
+      'expense': 'Expenses',
+      'payroll': 'Payroll',
+      'loan': 'Loans given',
+      'advance': 'Advances given',
+    };
     const cashFlowTypes = {'expense', 'payroll', 'loan', 'advance'};
     const profitTypes = {'expense', 'payroll'};
     final types = _profitMode == _ProfitMode.cashFlow
@@ -328,10 +339,14 @@ class _ReportScreenState extends State<ReportScreen> {
         : profitTypes;
     for (final t in _transactions) {
       if (!types.contains(t['type']) || !_matchesDate(t)) continue;
-      final c = AppCurrency.fromCode(t['currency'] as String?);
-      outgoing[c] = (outgoing[c] ?? 0) + (t['amount'] as num).toDouble();
+      if (AppCurrency.fromCode(t['currency'] as String?) != currency) {
+        continue;
+      }
+      final label = labels[t['type']]!;
+      totals[label] = (totals[label] ?? 0) + (t['amount'] as num).toDouble();
     }
-    return outgoing;
+    return totals.entries.where((e) => e.value != 0).toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
   }
 
   /// Spend per category for one currency, sorted descending - every
@@ -586,6 +601,40 @@ class _ReportScreenState extends State<ReportScreen> {
     if (picked != null) setState(() => _dateRange = picked);
   }
 
+  /// The last 12 calendar months (this one first), offered as one-tap
+  /// picks in the date filter dropdown alongside "All time" and "Custom
+  /// range".
+  List<DateTime> get _monthOptions {
+    final now = DateTime.now();
+    return List.generate(12, (i) => DateTime(now.year, now.month - i));
+  }
+
+  String _monthKey(DateTime month) =>
+      '${month.year}-${month.month.toString().padLeft(2, '0')}';
+
+  /// Which dropdown item `_dateRange` currently corresponds to - 'all'
+  /// for no filter, a month key when it's exactly one of `_monthOptions`
+  /// full calendar months (including a dashboard deep-link's
+  /// `initialDateRange`, which is always a full month), or 'custom' for
+  /// anything else (a hand-picked range, or a full month older than the
+  /// last 12 - falling back to 'custom' rather than a month not present
+  /// in the dropdown's own item list, which `DropdownButtonFormField`
+  /// requires).
+  String get _dateFilterKey {
+    if (_dateRange == null) return 'all';
+    final s = _dateRange!.start;
+    final e = _dateRange!.end;
+    final lastDayOfMonth = DateTime(s.year, s.month + 1, 0);
+    final isFullMonth =
+        s.day == 1 &&
+        e.year == lastDayOfMonth.year &&
+        e.month == lastDayOfMonth.month &&
+        e.day == lastDayOfMonth.day;
+    if (!isFullMonth) return 'custom';
+    final key = _monthKey(DateTime(s.year, s.month));
+    return _monthOptions.any((m) => _monthKey(m) == key) ? key : 'custom';
+  }
+
   InputDecoration _dropdownDecoration(String hint) {
     return InputDecoration(
       hintText: hint,
@@ -826,6 +875,119 @@ class _ReportScreenState extends State<ReportScreen> {
     );
   }
 
+  /// An income-statement-style card for one currency: an Income section
+  /// (harvest sales, and in Cash Flow mode also investment/loan
+  /// proceeds/repayments), an Outgoing section (expenses and payroll,
+  /// plus loans/advances given in Cash Flow mode - expenses aren't split
+  /// by category here, unlike the Expenses tab's own chart, since this
+  /// table is about income vs. outgoing at the type level), then Total
+  /// income, Total outgoing, and Net at the bottom - the Investopedia-
+  /// style layout the user asked to match, minus a separate tax line
+  /// (this app has no tax concept of its own; a "Tax" expense category
+  /// just folds into the single "Expenses" row like every other
+  /// category).
+  Widget _profitStatementCard(AppCurrency currency) {
+    final income = _profitIncomeBreakdown(currency);
+    final outgoing = _profitOutgoingBreakdown(currency);
+    final totalIncome = income.fold<double>(0, (sum, e) => sum + e.value);
+    final totalOutgoing = outgoing.fold<double>(0, (sum, e) => sum + e.value);
+    final net = totalIncome - totalOutgoing;
+
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            '${_profitMode == _ProfitMode.cashFlow ? 'Cash Flow' : 'Profit'} '
+            '(${currency.code})',
+            style: TextStyle(
+              fontSize: 14.5,
+              fontWeight: FontWeight.w700,
+              color: AppColors.ink,
+            ),
+          ),
+          const SizedBox(height: 14),
+          _statementSectionHeader('Income'),
+          if (income.isEmpty)
+            _statementRow('No income', 0, currency)
+          else
+            for (final e in income) _statementRow(e.key, e.value, currency),
+          _statementDivider(),
+          _statementRow('Total income', totalIncome, currency, bold: true),
+          const SizedBox(height: 16),
+          _statementSectionHeader('Outgoing'),
+          if (outgoing.isEmpty)
+            _statementRow('No outgoing', 0, currency)
+          else
+            for (final e in outgoing) _statementRow(e.key, e.value, currency),
+          _statementDivider(),
+          _statementRow('Total outgoing', totalOutgoing, currency, bold: true),
+          const SizedBox(height: 6),
+          _statementDivider(),
+          _statementRow(
+            'Net',
+            net,
+            currency,
+            bold: true,
+            color: net < 0 ? AppColors.expense : AppColors.cashIn,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statementSectionHeader(String label) => Padding(
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Text(
+      label,
+      style: TextStyle(
+        fontSize: 12.5,
+        fontWeight: FontWeight.w700,
+        color: AppColors.inkSecondary,
+      ),
+    ),
+  );
+
+  Widget _statementDivider() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 6),
+    child: Divider(height: 1, color: AppColors.hairline),
+  );
+
+  Widget _statementRow(
+    String label,
+    double amount,
+    AppCurrency currency, {
+    bool bold = false,
+    Color? color,
+  }) {
+    final textColor = color ?? (bold ? AppColors.ink : AppColors.inkSecondary);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: bold ? 14 : 13,
+              fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
+              color: bold ? AppColors.ink : AppColors.inkSecondary,
+            ),
+          ),
+          Text(
+            formatMoney(amount, currency),
+            style: TextStyle(
+              fontSize: bold ? 14 : 13,
+              fontWeight: bold ? FontWeight.w700 : FontWeight.w600,
+              color: textColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final filtered = _filtered;
@@ -997,52 +1159,46 @@ class _ReportScreenState extends State<ReportScreen> {
                           ],
                         ),
                       const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: _pickDateRange,
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: _dateRange == null
-                                    ? AppColors.inkSecondary
-                                    : AppColors.brandGreen,
-                                backgroundColor: _dateRange == null
-                                    ? AppColors.surface
-                                    : AppColors.brandGreen.withValues(
-                                        alpha: 0.08,
-                                      ),
-                                side: BorderSide(
-                                  color: _dateRange == null
-                                      ? AppColors.hairline
-                                      : AppColors.brandGreen.withValues(
-                                          alpha: 0.35,
-                                        ),
-                                ),
-                                alignment: Alignment.centerLeft,
-                              ),
-                              icon: const Icon(
-                                Icons.calendar_today_outlined,
-                                size: 15,
-                              ),
-                              label: Text(
-                                _dateRange == null
-                                    ? 'Date'
-                                    : '${_dateFormat.format(_dateRange!.start)} - ${_dateFormat.format(_dateRange!.end)}',
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
+                      DropdownButtonFormField<String>(
+                        initialValue: _dateFilterKey,
+                        decoration: _dropdownDecoration('Date range'),
+                        isExpanded: true,
+                        items: [
+                          const DropdownMenuItem(
+                            value: 'all',
+                            child: Text('All time'),
+                          ),
+                          for (final month in _monthOptions)
+                            DropdownMenuItem(
+                              value: _monthKey(month),
+                              child: Text(_monthDropdownFormat.format(month)),
+                            ),
+                          DropdownMenuItem(
+                            value: 'custom',
+                            child: Text(
+                              _dateFilterKey == 'custom' && _dateRange != null
+                                  ? '${_dateFormat.format(_dateRange!.start)} - ${_dateFormat.format(_dateRange!.end)}'
+                                  : 'Custom range',
                             ),
                           ),
-                          if (_dateRange != null)
-                            IconButton(
-                              icon: const Icon(Icons.close, size: 18),
-                              color: AppColors.inkMuted,
-                              onPressed: () =>
-                                  setState(() => _dateRange = null),
-                            ),
                         ],
+                        onChanged: (value) async {
+                          if (value == 'all') {
+                            setState(() => _dateRange = null);
+                          } else if (value == 'custom') {
+                            await _pickDateRange();
+                          } else {
+                            final parts = value!.split('-');
+                            final year = int.parse(parts[0]);
+                            final month = int.parse(parts[1]);
+                            setState(
+                              () => _dateRange = DateTimeRange(
+                                start: DateTime(year, month, 1),
+                                end: DateTime(year, month + 1, 0),
+                              ),
+                            );
+                          }
+                        },
                       ),
                     ],
                   ),
@@ -1060,72 +1216,67 @@ class _ReportScreenState extends State<ReportScreen> {
                 // Summary cards - two per metric, one per currency, since
                 // there's no toggle anymore to pick just one (see
                 // claude.md's "Currencies": never blend USD and SLSH).
-                SizedBox(
-                  height: 82,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    children: summary.entries.expand((e) {
-                      // "Outstanding" is the headline number — give it
-                      // the account's accent; supporting figures stay
-                      // neutral.
-                      final isHeadline =
-                          e.key == 'Outstanding' ||
-                          e.key == 'Net' ||
-                          e.key.startsWith('Total');
-                      return AppCurrency.values.map((currency) {
-                        final value = e.value[currency] ?? 0;
-                        // Net can go negative (a loss) - the account's
-                        // usual accent (a cheerful green for Profit)
-                        // would be misleading on a loss, so this one
-                        // card's color follows the value's own sign
-                        // instead of the tab's fixed accent.
-                        final accent = e.key == 'Net'
-                            ? (value < 0 ? AppColors.expense : AppColors.cashIn)
-                            : _accountColor;
-                        final color = isHeadline
-                            ? accent
-                            : AppColors.inkSecondary;
-                        return Container(
-                          width: 138,
-                          margin: const EdgeInsets.only(right: 10),
-                          padding: const EdgeInsets.all(12),
-                          decoration: isHeadline
-                              ? AppStyles.accentCard(accent)
-                              : AppStyles.card,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                '${e.key} (${currency.code})',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.inkSecondary,
+                // Skipped for Profit, whose statement table (built into
+                // the body below) already carries these totals plus a
+                // full income/outgoing breakdown.
+                if (_selectedAccount != 'Profit') ...[
+                  SizedBox(
+                    height: 82,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      children: summary.entries.expand((e) {
+                        // "Outstanding" is the headline number — give it
+                        // the account's accent; supporting figures stay
+                        // neutral.
+                        final isHeadline =
+                            e.key == 'Outstanding' || e.key.startsWith('Total');
+                        return AppCurrency.values.map((currency) {
+                          final value = e.value[currency] ?? 0;
+                          final color = isHeadline
+                              ? _accountColor
+                              : AppColors.inkSecondary;
+                          return Container(
+                            width: 138,
+                            margin: const EdgeInsets.only(right: 10),
+                            padding: const EdgeInsets.all(12),
+                            decoration: isHeadline
+                                ? AppStyles.accentCard(_accountColor)
+                                : AppStyles.card,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  '${e.key} (${currency.code})',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.inkSecondary,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 7),
-                              Text(
-                                formatMoney(value, currency),
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: -0.3,
-                                  color: color,
+                                const SizedBox(height: 7),
+                                Text(
+                                  formatMoney(value, currency),
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: -0.3,
+                                    color: color,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ),
-                        );
-                      });
-                    }).toList(),
+                              ],
+                            ),
+                          );
+                        });
+                      }).toList(),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
+                  const SizedBox(height: 12),
+                ],
 
                 Expanded(
                   child: (_selectedAccount != 'Profit' && filtered.isEmpty)
@@ -1159,6 +1310,29 @@ class _ReportScreenState extends State<ReportScreen> {
                                   height: 1.4,
                                 ),
                               ),
+                              const SizedBox(height: 12),
+                              if (AppCurrency.values.every(
+                                (c) =>
+                                    _profitIncomeBreakdown(c).isEmpty &&
+                                    _profitOutgoingBreakdown(c).isEmpty,
+                              ))
+                                EmptyState(
+                                  icon: _accountIcon,
+                                  title: 'Nothing to report yet',
+                                  subtitle:
+                                      'No income or outgoing in this range.',
+                                )
+                              else
+                                for (final currency in AppCurrency.values)
+                                  if (_profitIncomeBreakdown(
+                                        currency,
+                                      ).isNotEmpty ||
+                                      _profitOutgoingBreakdown(
+                                        currency,
+                                      ).isNotEmpty) ...[
+                                    _profitStatementCard(currency),
+                                    const SizedBox(height: 12),
+                                  ],
                             ] else if (_selectedAccount == 'Expenses') ...[
                               // A category breakdown doesn't make sense
                               // once you've already filtered to one
