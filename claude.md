@@ -1181,15 +1181,67 @@ lib/
 │   │                                 Payroll/
 │   │                                 Advances/Loans show a filtered
 │   │                                 transaction list; Expenses instead
-│   │                                 shows two bar charts (spend by
-│   │                                 category, capped to top 7 + "Other";
-│   │                                 spend by month, last 6 months) built
-│   │                                 with `fl_chart`, single-hue (the
-│   │                                 app's expense red) since it's a
-│   │                                 magnitude comparison, not identity -
-│   │                                 see the dataviz skill's form-choice
+│   │                                 shows "Spending by category" (spend
+│   │                                 by category, capped to top 7 +
+│   │                                 "Other" — hidden once a single
+│   │                                 category is selected, since a
+│   │                                 breakdown of one category isn't
+│   │                                 useful and would otherwise still
+│   │                                 show *other* categories that
+│   │                                 happen to share a multi-invoice
+│   │                                 transaction with the selected one)
+│   │                                 and "Spending by month" (last 6
+│   │                                 months), both bar charts built with
+│   │                                 `fl_chart`, single-hue (the app's
+│   │                                 expense red) since it's a magnitude
+│   │                                 comparison, not identity - see the
+│   │                                 dataviz skill's form-choice
 │   │                                 guidance before changing this.
-│   │                                 Read-only, so visible to viewers too.
+│   │                                 Category-axis labels are boxed to
+│   │                                 their own bar's slot width (via
+│   │                                 `LayoutBuilder`) and wrap to 2 lines
+│   │                                 with ellipsis - without this,
+│   │                                 fl_chart lays out each title at its
+│   │                                 natural unbounded width and several
+│   │                                 long category names overlap. Once a
+│   │                                 single category is selected, a
+│   │                                 "View N invoices" button opens
+│   │                                 category_invoices_screen.dart.
+│   │                                 `_expenseAmountFor(t)` is the
+│   │                                 shared helper behind the summary
+│   │                                 total, the monthly chart, and the
+│   │                                 invoices list: when a category
+│   │                                 filter is active it sums only the
+│   │                                 matching `transaction_items` row(s)
+│   │                                 of a transaction, not the whole
+│   │                                 transaction's `amount` - a
+│   │                                 multi-invoice expense matches on
+│   │                                 category if *any* of its items do,
+│   │                                 so using the full amount would
+│   │                                 count every other category on that
+│   │                                 same payment too. Read-only, so
+│   │                                 visible to viewers too.
+│   ├── category_invoices_screen.dart — every `transaction_items` row in
+│   │                                 one expense category, as cards
+│   │                                 (built by report_screen.dart from
+│   │                                 whatever's currently filtered — this
+│   │                                 screen never fetches on its own),
+│   │                                 with a summary card up top
+│   │                                 (`DualCurrencyStat` of the total,
+│   │                                 since invoices can span both
+│   │                                 currencies). Tapping a card opens a
+│   │                                 bottom sheet with that invoice's
+│   │                                 full detail: amount, date, the
+│   │                                 invoice's own note (if any, from a
+│   │                                 split multi-invoice line), the
+│   │                                 parent transaction's note, and — for
+│   │                                 an invoice that was part of a
+│   │                                 multi-invoice payment — which other
+│   │                                 categories that same payment also
+│   │                                 covered, so it reads clearly as
+│   │                                 "part of a larger payment" rather
+│   │                                 than a standalone one. Read-only, no
+│   │                                 edit/delete here.
 │   ├── harvests_screen.dart       — every harvest logged, newest first,
 │   │                                 labeled by its `#H<n>` display code
 │   │                                 (`harvest_number`) rather than just

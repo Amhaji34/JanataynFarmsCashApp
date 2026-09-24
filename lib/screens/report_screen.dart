@@ -5,6 +5,7 @@ import '../main.dart';
 import '../theme/app_theme.dart';
 import '../utils/currency.dart';
 import '../widgets/app_ui.dart';
+import 'category_invoices_screen.dart';
 
 class ReportScreen extends StatefulWidget {
   const ReportScreen({super.key, this.initialAccount, this.initialDateRange});
@@ -57,7 +58,8 @@ class _ReportScreenState extends State<ReportScreen> {
       final txns = await supabase
           .from('transactions')
           .select(
-            '*, partners(name), staff(name), transaction_items(category, amount)',
+            '*, partners(name), staff(name), '
+            'transaction_items(id, category, amount, note)',
           )
           .order('transaction_date', ascending: false);
       final staff = await supabase.from('staff').select().order('name');
@@ -234,6 +236,43 @@ class _ReportScreenState extends State<ReportScreen> {
     return top;
   }
 
+  /// Every `transaction_items` row matching the selected category,
+  /// flattened with its parent transaction's date/currency/note - what
+  /// CategoryInvoicesScreen shows as cards. Only meaningful once a
+  /// category is actually selected.
+  List<CategoryInvoice> get _categoryInvoices {
+    if (_selectedCategoryName == null) return [];
+    final invoices = <CategoryInvoice>[];
+    for (final t in _filtered) {
+      final items = _itemsOf(t);
+      final matching = items.where(
+        (i) => i['category'] == _selectedCategoryName,
+      );
+      final otherCategories = items
+          .where((i) => i['category'] != _selectedCategoryName)
+          .map((i) => i['category'] as String? ?? '')
+          .where((c) => c.isNotEmpty)
+          .toSet()
+          .toList();
+      for (final item in matching) {
+        invoices.add(
+          CategoryInvoice(
+            transactionId: t['id'] as String,
+            itemId: item['id'] as String,
+            date: DateTime.parse(t['transaction_date'] as String),
+            amount: (item['amount'] as num).toDouble(),
+            currency: AppCurrency.fromCode(t['currency'] as String?),
+            itemNote: item['note'] as String?,
+            transactionNote: (t['note'] as String? ?? '').trim(),
+            otherCategories: otherCategories,
+          ),
+        );
+      }
+    }
+    invoices.sort((a, b) => b.date.compareTo(a.date));
+    return invoices;
+  }
+
   /// Spend per month, chronological, capped to the most recent 6 months
   /// present in the filtered data.
   List<MapEntry<String, double>> get _monthlyChartData {
@@ -295,6 +334,17 @@ class _ReportScreenState extends State<ReportScreen> {
       default:
         return AppColors.neutral;
     }
+  }
+
+  void _openCategoryInvoices(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CategoryInvoicesScreen(
+          categoryName: _selectedCategoryName!,
+          invoices: _categoryInvoices,
+        ),
+      ),
+    );
   }
 
   IconData get _accountIcon {
@@ -776,6 +826,25 @@ class _ReportScreenState extends State<ReportScreen> {
                                 subtitle: 'Top categories in this range',
                                 icon: Icons.pie_chart_outline,
                                 chart: _barChart(_categoryChartData),
+                              ),
+                              const SizedBox(height: 12),
+                            ] else ...[
+                              SizedBox(
+                                width: double.infinity,
+                                height: 48,
+                                child: OutlinedButton.icon(
+                                  onPressed: _categoryInvoices.isEmpty
+                                      ? null
+                                      : () => _openCategoryInvoices(context),
+                                  icon: const Icon(
+                                    Icons.receipt_long_outlined,
+                                    size: 17,
+                                  ),
+                                  label: Text(
+                                    'View ${_categoryInvoices.length} invoice'
+                                    '${_categoryInvoices.length == 1 ? '' : 's'}',
+                                  ),
+                                ),
                               ),
                               const SizedBox(height: 12),
                             ],
