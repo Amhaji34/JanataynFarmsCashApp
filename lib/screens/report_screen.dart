@@ -37,6 +37,7 @@ class _ReportScreenState extends State<ReportScreen> {
   static const _accounts = [
     'Expenses',
     'Profit',
+    'Harvest',
     'Advances',
     'Payroll',
     'Loans',
@@ -56,6 +57,12 @@ class _ReportScreenState extends State<ReportScreen> {
   /// Fetched separately from `_transactions` since it's a different
   /// table (see claude.md's "Funding accounts").
   List<Map<String, dynamic>> _fundAdds = [];
+
+  /// The Harvest tab's own two tables - pure inventory intake and the
+  /// sales against it, entirely separate from `_transactions` (see
+  /// claude.md's "Harvests and customer sales").
+  List<Map<String, dynamic>> _harvests = [];
+  List<Map<String, dynamic>> _harvestSales = [];
 
   String? _selectedStaffId;
   String? _selectedPartnerId;
@@ -126,6 +133,14 @@ class _ReportScreenState extends State<ReportScreen> {
             'accounts!account_transactions_account_id_fkey(name)',
           )
           .eq('type', 'fund_add');
+      final harvests = await supabase
+          .from('harvests')
+          .select()
+          .order('harvest_date', ascending: false);
+      final harvestSales = await supabase
+          .from('harvest_sales')
+          .select('*, customers(name)')
+          .order('sale_date', ascending: false);
 
       setState(() {
         _transactions = List<Map<String, dynamic>>.from(txns);
@@ -133,6 +148,8 @@ class _ReportScreenState extends State<ReportScreen> {
         _partners = List<Map<String, dynamic>>.from(partners);
         _categories = List<Map<String, dynamic>>.from(categories);
         _fundAdds = List<Map<String, dynamic>>.from(fundAdds);
+        _harvests = List<Map<String, dynamic>>.from(harvests);
+        _harvestSales = List<Map<String, dynamic>>.from(harvestSales);
         _loading = false;
       });
     } catch (e) {
@@ -161,9 +178,12 @@ class _ReportScreenState extends State<ReportScreen> {
   List<Map<String, dynamic>> _itemsOf(Map<String, dynamic> t) =>
       List<Map<String, dynamic>>.from(t['transaction_items'] ?? []);
 
-  bool _matchesDate(Map<String, dynamic> t) {
+  /// Whether `date` falls within `_dateRange` (always true when there's
+  /// no filter). The Harvest tab uses this directly against
+  /// `harvest_date`/`sale_date`, since those fields don't share
+  /// `transactions`/`account_transactions`' `transaction_date` name.
+  bool _matchesDateValue(DateTime date) {
     if (_dateRange == null) return true;
-    final date = DateTime.parse(t['transaction_date'] as String);
     final start = DateTime(
       _dateRange!.start.year,
       _dateRange!.start.month,
@@ -179,6 +199,9 @@ class _ReportScreenState extends State<ReportScreen> {
     );
     return !date.isBefore(start) && !date.isAfter(end);
   }
+
+  bool _matchesDate(Map<String, dynamic> t) =>
+      _matchesDateValue(DateTime.parse(t['transaction_date'] as String));
 
   List<Map<String, dynamic>> get _filtered {
     final types = _accountTypes;
@@ -297,6 +320,131 @@ class _ReportScreenState extends State<ReportScreen> {
       0,
       (sum, e) => sum + _convert(e.value, e.key, target),
     );
+  }
+
+  /// Harvests within `_dateRange`, filtered on `harvest_date` - the
+  /// Harvest tab's own date filtering, separate from `_filtered`
+  /// (`transactions`).
+  List<Map<String, dynamic>> get _filteredHarvests => _harvests
+      .where(
+        (h) => _matchesDateValue(DateTime.parse(h['harvest_date'] as String)),
+      )
+      .toList();
+
+  /// Sales within `_dateRange`, filtered on `sale_date` - independent of
+  /// the harvest's own date (see claude.md's "Harvests and customer
+  /// sales"), so this is a different subset than `_filteredHarvests`
+  /// would give if applied to sales.
+  List<Map<String, dynamic>> get _filteredHarvestSales => _harvestSales
+      .where((s) => _matchesDateValue(DateTime.parse(s['sale_date'] as String)))
+      .toList();
+
+  /// What the customer owes for one sale - fee-adjusted, floored at 0,
+  /// same formula as everywhere else this figure is used (see the
+  /// `harvest_sales` table doc in claude.md).
+  double _saleValue(Map<String, dynamic> s) {
+    final kg = (s['kg_sold'] as num).toDouble();
+    final price = (s['price_per_kg'] as num).toDouble();
+    final fee = (s['transport_fee'] as num? ?? 0).toDouble();
+    return (kg * price - fee).clamp(0, double.infinity);
+  }
+
+  double get _totalKgHarvested => _filteredHarvests.fold<double>(
+    0,
+    (sum, h) => sum + (h['kg_harvested'] as num).toDouble(),
+  );
+
+  double get _totalKgSold => _filteredHarvestSales.fold<double>(
+    0,
+    (sum, s) => sum + (s['kg_sold'] as num).toDouble(),
+  );
+
+  /// kg harvested per month, chronological, capped to the most recent 6
+  /// months present - no currency involved, unlike every other chart on
+  /// this screen, so it's not parameterized by `_displayCurrencies` and
+  /// renders as a single chart regardless of the Currency display mode.
+  List<MapEntry<String, double>> get _harvestedByMonthChartData {
+    final totals = <DateTime, double>{};
+    for (final h in _filteredHarvests) {
+      final date = DateTime.parse(h['harvest_date'] as String);
+      final key = DateTime(date.year, date.month);
+      totals[key] = (totals[key] ?? 0) + (h['kg_harvested'] as num).toDouble();
+    }
+    final sortedKeys = totals.keys.toList()..sort();
+    final recentKeys = sortedKeys.length <= 6
+        ? sortedKeys
+        : sortedKeys.sublist(sortedKeys.length - 6);
+    return recentKeys
+        .map((k) => MapEntry(_monthLabelFormat.format(k), totals[k]!))
+        .toList();
+  }
+
+  /// Sale value by customer for one currency, sorted descending - the
+  /// Harvest tab's counterpart of `_categoryChartData`.
+  List<MapEntry<String, double>> _harvestCustomerChartData(
+    AppCurrency currency,
+  ) {
+    final totals = <String, double>{};
+    for (final s in _filteredHarvestSales) {
+      final native = AppCurrency.fromCode(s['currency'] as String?);
+      if (_displayMode == _CurrencyDisplayMode.both && native != currency) {
+        continue;
+      }
+      final name = s['customers']?['name'] as String? ?? 'Customer';
+      final value = _displayAmount(_saleValue(s), native, currency);
+      totals[name] = (totals[name] ?? 0) + value;
+    }
+    return totals.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+  }
+
+  /// Sale value by month for one currency, chronological, capped to the
+  /// most recent 6 months present.
+  List<MapEntry<String, double>> _harvestMonthlyValueChartData(
+    AppCurrency currency,
+  ) {
+    final totals = <DateTime, double>{};
+    for (final s in _filteredHarvestSales) {
+      final native = AppCurrency.fromCode(s['currency'] as String?);
+      if (_displayMode == _CurrencyDisplayMode.both && native != currency) {
+        continue;
+      }
+      final date = DateTime.parse(s['sale_date'] as String);
+      final key = DateTime(date.year, date.month);
+      final value = _displayAmount(_saleValue(s), native, currency);
+      totals[key] = (totals[key] ?? 0) + value;
+    }
+    final sortedKeys = totals.keys.toList()..sort();
+    final recentKeys = sortedKeys.length <= 6
+        ? sortedKeys
+        : sortedKeys.sublist(sortedKeys.length - 6);
+    return recentKeys
+        .map((k) => MapEntry(_monthLabelFormat.format(k), totals[k]!))
+        .toList();
+  }
+
+  /// Every currently filtered sale, as an AccountRecord - the Harvest
+  /// tab's "View N sales" list, same shape as `_accountRecords` but
+  /// sourced from `_filteredHarvestSales` instead of `_filtered`.
+  List<AccountRecord> get _harvestSaleRecords {
+    return _filteredHarvestSales.map((s) {
+      final native = AppCurrency.fromCode(s['currency'] as String?);
+      final displayCurrency = _displayMode == _CurrencyDisplayMode.both
+          ? native
+          : _displayCurrencies.single;
+      final amount = _displayAmount(_saleValue(s), native, displayCurrency);
+      final customerName = s['customers']?['name'] as String? ?? 'Customer';
+      return AccountRecord(
+        title: customerName,
+        date: DateTime.parse(s['sale_date'] as String),
+        amount: amount,
+        currency: displayCurrency,
+        color: AppColors.brandGreenLight,
+        icon: Icons.eco_outlined,
+        isPositive: true,
+        isNeutral: false,
+        note: (s['note'] as String? ?? '').trim(),
+      );
+    }).toList();
   }
 
   /// Every summary figure is per-currency (never blended - see
@@ -671,6 +819,8 @@ class _ReportScreenState extends State<ReportScreen> {
         return AppColors.expense;
       case 'Profit':
         return AppColors.cashIn;
+      case 'Harvest':
+        return AppColors.brandGreenLight;
       default:
         return AppColors.neutral;
     }
@@ -698,6 +848,17 @@ class _ReportScreenState extends State<ReportScreen> {
     );
   }
 
+  void _openHarvestSales(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AccountRecordsScreen(
+          accountName: 'Harvest',
+          records: _harvestSaleRecords,
+        ),
+      ),
+    );
+  }
+
   IconData get _accountIcon {
     switch (_selectedAccount) {
       case 'Payroll':
@@ -710,6 +871,8 @@ class _ReportScreenState extends State<ReportScreen> {
         return Icons.receipt_long_outlined;
       case 'Profit':
         return Icons.trending_up;
+      case 'Harvest':
+        return Icons.eco_outlined;
       default:
         return Icons.more_horiz;
     }
@@ -775,6 +938,37 @@ class _ReportScreenState extends State<ReportScreen> {
     );
   }
 
+  /// A plain kg stat card - the Harvest tab's counterpart of the
+  /// currency-keyed summary cards other tabs use, since kg has no
+  /// currency to render two of.
+  Widget _kgStatCard(String label, double kg, IconData icon, Color color) {
+    return AppCard(
+      accent: color,
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          IconBadge(icon: icon, color: color, size: 34, iconSize: 17),
+          const SizedBox(height: 10),
+          Text(
+            label,
+            style: TextStyle(fontSize: 12, color: AppColors.inkSecondary),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            '${kg.toStringAsFixed(1)} kg',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: AppColors.ink,
+              letterSpacing: -0.3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _chartCard({
     required String title,
     required String subtitle,
@@ -827,7 +1021,10 @@ class _ReportScreenState extends State<ReportScreen> {
     );
   }
 
-  Widget _barChart(List<MapEntry<String, double>> data, AppCurrency currency) {
+  Widget _barChart(
+    List<MapEntry<String, double>> data,
+    String Function(double value) formatValue,
+  ) {
     if (data.isEmpty) {
       return Center(
         child: Text(
@@ -867,7 +1064,7 @@ class _ReportScreenState extends State<ReportScreen> {
           padding: const EdgeInsets.symmetric(horizontal: chartPadding),
           child: SizedBox(
             width: barsWidth,
-            child: _buildBarChart(data, maxValue, slotWidth, currency),
+            child: _buildBarChart(data, maxValue, slotWidth, formatValue),
           ),
         );
         if (barsWidth <= availableWidth) return chart;
@@ -883,7 +1080,7 @@ class _ReportScreenState extends State<ReportScreen> {
     List<MapEntry<String, double>> data,
     double maxValue,
     double slotWidth,
-    AppCurrency currency,
+    String Function(double value) formatValue,
   ) {
     return BarChart(
       BarChartData(
@@ -902,7 +1099,12 @@ class _ReportScreenState extends State<ReportScreen> {
         borderData: FlBorderData(show: false),
         barTouchData: BarTouchData(
           touchTooltipData: BarTouchTooltipData(
-            getTooltipColor: (_) => AppColors.ink,
+            // Fixed, not AppColors.ink - ink is theme-aware and turns
+            // near-white in dark mode (see claude.md's "Dark theme"), but
+            // this bubble always pairs with hardcoded white text below,
+            // so a theme-aware background made the tooltip unreadable
+            // (white on near-white) in dark mode.
+            getTooltipColor: (_) => const Color(0xFF262626),
             // Without these, fl_chart centers a touched bar's tooltip
             // blindly and lets it overflow past the chart's own edges -
             // for the first/last bar that overflow gets clipped by
@@ -913,7 +1115,7 @@ class _ReportScreenState extends State<ReportScreen> {
             fitInsideVertically: true,
             getTooltipItem: (group, groupIndex, rod, rodIndex) =>
                 BarTooltipItem(
-                  formatMoney(rod.toY, currency),
+                  formatValue(rod.toY),
                   const TextStyle(
                     color: Colors.white,
                     fontSize: 12,
@@ -1136,6 +1338,7 @@ class _ReportScreenState extends State<ReportScreen> {
                         'Loans' => AppColors.loan,
                         'Expenses' => AppColors.expense,
                         'Profit' => AppColors.cashIn,
+                        'Harvest' => AppColors.brandGreenLight,
                         _ => AppColors.neutral,
                       };
                       return ChoiceChip(
@@ -1429,10 +1632,12 @@ class _ReportScreenState extends State<ReportScreen> {
                 // Summary cards - two per metric, one per currency, since
                 // there's no toggle anymore to pick just one (see
                 // claude.md's "Currencies": never blend USD and SLSH).
-                // Skipped for Profit, whose statement table (built into
-                // the body below) already carries these totals plus a
-                // full income/outgoing breakdown.
-                if (_selectedAccount != 'Profit') ...[
+                // Skipped for Profit (its statement table, built into the
+                // body below, already carries these totals) and Harvest
+                // (whose own kg/value stat cards are built into its body
+                // instead, since kg isn't a `Map<AppCurrency, double>`).
+                if (_selectedAccount != 'Profit' &&
+                    _selectedAccount != 'Harvest') ...[
                   SizedBox(
                     height: 82,
                     child: ListView(
@@ -1495,7 +1700,10 @@ class _ReportScreenState extends State<ReportScreen> {
                 ],
 
                 Expanded(
-                  child: (_selectedAccount != 'Profit' && filtered.isEmpty)
+                  child:
+                      (_selectedAccount != 'Profit' &&
+                          _selectedAccount != 'Harvest' &&
+                          filtered.isEmpty)
                       ? EmptyState(
                           icon: _accountIcon,
                           title: 'Nothing to report yet',
@@ -1549,6 +1757,101 @@ class _ReportScreenState extends State<ReportScreen> {
                                     _profitStatementCard(currency),
                                     const SizedBox(height: 12),
                                   ],
+                            ] else if (_selectedAccount == 'Harvest') ...[
+                              if (_filteredHarvests.isEmpty &&
+                                  _filteredHarvestSales.isEmpty)
+                                EmptyState(
+                                  icon: _accountIcon,
+                                  title: 'Nothing to report yet',
+                                  subtitle:
+                                      'No harvests or sales in this range.',
+                                )
+                              else ...[
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _kgStatCard(
+                                        'Harvested',
+                                        _totalKgHarvested,
+                                        Icons.eco_outlined,
+                                        AppColors.brandGreenLight,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: _kgStatCard(
+                                        'Sold',
+                                        _totalKgSold,
+                                        Icons.scale_outlined,
+                                        AppColors.brandGreen,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                if (_harvestedByMonthChartData.isNotEmpty) ...[
+                                  _chartCard(
+                                    title: 'Harvested by month (kg)',
+                                    subtitle: 'Last 6 months with activity',
+                                    icon: Icons.eco_outlined,
+                                    chart: _barChart(
+                                      _harvestedByMonthChartData,
+                                      (v) => '${v.toStringAsFixed(1)} kg',
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                ],
+                                for (final currency in _displayCurrencies)
+                                  if (_harvestCustomerChartData(
+                                    currency,
+                                  ).isNotEmpty) ...[
+                                    _chartCard(
+                                      title:
+                                          'Sales by customer (${currency.code})',
+                                      subtitle: 'Top customers in this range',
+                                      icon: Icons.bar_chart_outlined,
+                                      chart: _barChart(
+                                        _harvestCustomerChartData(currency),
+                                        (v) => formatMoney(v, currency),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
+                                for (final currency in _displayCurrencies)
+                                  if (_harvestMonthlyValueChartData(
+                                    currency,
+                                  ).isNotEmpty) ...[
+                                    _chartCard(
+                                      title:
+                                          'Sales value by month (${currency.code})',
+                                      subtitle: 'Last 6 months with activity',
+                                      icon: Icons.show_chart,
+                                      chart: _barChart(
+                                        _harvestMonthlyValueChartData(currency),
+                                        (v) => formatMoney(v, currency),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
+                                SizedBox(
+                                  width: double.infinity,
+                                  height: 48,
+                                  child: OutlinedButton.icon(
+                                    onPressed: _harvestSaleRecords.isEmpty
+                                        ? null
+                                        : () => _openHarvestSales(context),
+                                    icon: const Icon(
+                                      Icons.receipt_long_outlined,
+                                      size: 17,
+                                    ),
+                                    label: Text(
+                                      'View ${_harvestSaleRecords.length} sale'
+                                      '${_harvestSaleRecords.length == 1 ? '' : 's'}',
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                              ],
                             ] else if (_selectedAccount == 'Expenses') ...[
                               // A category breakdown doesn't make sense
                               // once you've already filtered to one
@@ -1573,7 +1876,7 @@ class _ReportScreenState extends State<ReportScreen> {
                                       icon: Icons.pie_chart_outline,
                                       chart: _barChart(
                                         _categoryChartData(currency),
-                                        currency,
+                                        (v) => formatMoney(v, currency),
                                       ),
                                     ),
                                     const SizedBox(height: 12),
@@ -1616,7 +1919,7 @@ class _ReportScreenState extends State<ReportScreen> {
                                       icon: Icons.bar_chart_outlined,
                                       chart: _barChart(
                                         _breakdownChartData(currency),
-                                        currency,
+                                        (v) => formatMoney(v, currency),
                                       ),
                                     ),
                                     const SizedBox(height: 12),
@@ -1652,7 +1955,7 @@ class _ReportScreenState extends State<ReportScreen> {
                                   icon: Icons.show_chart,
                                   chart: _barChart(
                                     _monthlyChartData(currency),
-                                    currency,
+                                    (v) => formatMoney(v, currency),
                                   ),
                                 ),
                                 const SizedBox(height: 12),

@@ -1170,8 +1170,8 @@ lib/
 │   │                                 constructor params, which just seed
 │   │                                 `_selectedAccount`/`_dateRange` — the
 │   │                                 screen behaves identically either
-│   │                                 way once opened. An "Expenses /
-│   │                                 Advances / Payroll / Loans / Profit"
+│   │                                 way once opened. An "Expenses / Profit /
+│   │                                 Harvest / Advances / Payroll / Loans"
 │   │                                 chip selector switches which
 │   │                                 transaction type(s) are shown, with
 │   │                                 a contextual filter (staff for
@@ -1368,7 +1368,22 @@ lib/
 │   │                                 fl_chart's own built-in fix: they
 │   │                                 shift an edge tooltip back inside
 │   │                                 the chart instead of letting it
-│   │                                 overflow at all.
+│   │                                 overflow at all. The tooltip bubble's
+│   │                                 own fill color is a fixed literal
+│   │                                 (`Color(0xFF262626)`), not
+│   │                                 `AppColors.ink` - `ink` is
+│   │                                 theme-aware and turns near-white in
+│   │                                 dark mode (see "Dark theme" below),
+│   │                                 but the tooltip's text is hardcoded
+│   │                                 white, so a theme-aware fill made
+│   │                                 the tooltip unreadable (white on
+│   │                                 near-white) specifically in dark
+│   │                                 mode - a fixed color paired with
+│   │                                 fixed white text is the correct
+│   │                                 pattern here per "Dark theme"'s own
+│   │                                 guidance (a background with a fixed
+│   │                                 foreground on top reads fine in both
+│   │                                 themes untouched).
 │   │                                 `_expenseAmountFor(t)` (a narrower cousin of
 │   │                                 `_headlineAmountFor` used only by
 │   │                                 Expenses) sums only the matching
@@ -1436,7 +1451,72 @@ lib/
 │   │                                 already carry the totals - only the
 │   │                                 shared date filter still applies (via
 │   │                                 `_matchesDate`). Read-only, so
-│   │                                 visible to viewers too.
+│   │                                 visible to viewers too. A sixth tab,
+│   │                                 "Harvest", reports on `harvests` and
+│   │                                 `harvest_sales` directly (fetched
+│   │                                 separately into `_harvests`/
+│   │                                 `_harvestSales` in `_loadAll`, since
+│   │                                 neither lives in `transactions`) -
+│   │                                 also skips the shared summary-card
+│   │                                 row and builds its own body instead,
+│   │                                 same as Profit. Date filtering here
+│   │                                 is `_matchesDateValue` (a `DateTime`
+│   │                                 overload `_matchesDate` now delegates
+│   │                                 to) applied to `harvest_date` for
+│   │                                 `_filteredHarvests` and `sale_date`
+│   │                                 for `_filteredHarvestSales`
+│   │                                 independently - the same two-date
+│   │                                 split the rest of the app treats as
+│   │                                 deliberate (see "Harvests and
+│   │                                 customer sales" above), so a harvest
+│   │                                 logged in-range with all its sales
+│   │                                 landing later, out of range, is
+│   │                                 reported as harvested-but-not-sold
+│   │                                 for that period rather than forcing
+│   │                                 one date to gate both. The body
+│   │                                 opens with two plain kg stat cards
+│   │                                 (`_kgStatCard` - "Harvested"/"Sold",
+│   │                                 no currency, unlike every other
+│   │                                 tab's cards), then "Harvested by
+│   │                                 month (kg)" (one chart, no currency -
+│   │                                 not parameterized by
+│   │                                 `_displayCurrencies` like every other
+│   │                                 chart here, since kg has none to
+│   │                                 render two of), then per
+│   │                                 `_displayCurrencies` currency: "Sales
+│   │                                 by customer" (`_harvestCustomerChartData`,
+│   │                                 same shape as the Payroll/Advances/
+│   │                                 Loans staff/partner breakdown) and
+│   │                                 "Sales value by month"
+│   │                                 (`_harvestMonthlyValueChartData`),
+│   │                                 each summing `_saleValue(s)` - the
+│   │                                 same fee-adjusted
+│   │                                 `kg_sold * price_per_kg -
+│   │                                 transport_fee` formula used
+│   │                                 everywhere a sale's value feeds a
+│   │                                 total (see the `harvest_sales` table
+│   │                                 doc above) - then a "View N sales"
+│   │                                 button (`_openHarvestSales`) into
+│   │                                 `account_records_screen.dart`,
+│   │                                 reusing that screen rather than a
+│   │                                 bespoke one (`_harvestSaleRecords`
+│   │                                 builds `AccountRecord`s the same way
+│   │                                 `_accountRecords` does for the other
+│   │                                 three tabs, customer name as the
+│   │                                 title). Respects the Currency
+│   │                                 display card and its exchange rate
+│   │                                 exactly like every other tab's
+│   │                                 charts/records. Because `_barChart`/
+│   │                                 `_buildBarChart` needed to render a
+│   │                                 currency-less kg chart alongside
+│   │                                 every other tab's money charts, both
+│   │                                 now take a `String Function(double)
+│   │                                 formatValue` callback instead of an
+│   │                                 `AppCurrency` - every money chart
+│   │                                 call site passes `(v) =>
+│   │                                 formatMoney(v, currency)`, and the
+│   │                                 kg chart passes `(v) =>
+│   │                                 '${v.toStringAsFixed(1)} kg'`.
 │   ├── account_records_screen.dart — every currently filtered
 │   │                                 Payroll/Advances/Loans transaction,
 │   │                                 as cards (built by
