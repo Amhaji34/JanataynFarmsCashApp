@@ -37,7 +37,6 @@ class _ReportScreenState extends State<ReportScreen> {
   String? _selectedPartnerId;
   String? _selectedCategoryName;
   late DateTimeRange? _dateRange = widget.initialDateRange;
-  AppCurrency _selectedCurrency = AppCurrency.usd;
 
   final _dateFormat = DateFormat('MMM d, yyyy');
   final _monthLabelFormat = DateFormat('MMM');
@@ -126,9 +125,6 @@ class _ReportScreenState extends State<ReportScreen> {
     return _transactions.where((t) {
       if (!types.contains(t['type'])) return false;
       if (!_matchesDate(t)) return false;
-      if (AppCurrency.fromCode(t['currency'] as String?) != _selectedCurrency) {
-        return false;
-      }
 
       if (_selectedAccount == 'Payroll' || _selectedAccount == 'Advances') {
         if (_selectedStaffId != null &&
@@ -166,57 +162,85 @@ class _ReportScreenState extends State<ReportScreen> {
     return (t['amount'] as num).toDouble();
   }
 
-  Map<String, double> get _summary {
+  Map<AppCurrency, double> _zeroByCurrency() => {
+    for (final c in AppCurrency.values) c: 0.0,
+  };
+
+  /// Every summary figure is per-currency (never blended - see
+  /// claude.md's "Currencies" section), so each metric maps to a
+  /// USD/SLSH breakdown rather than one number. The summary card row
+  /// below renders two cards per metric, one per currency.
+  Map<String, Map<AppCurrency, double>> get _summary {
     final filtered = _filtered;
     switch (_selectedAccount) {
       case 'Payroll':
-        final total = filtered.fold<double>(
-          0,
-          (sum, t) => sum + (t['amount'] as num).toDouble(),
-        );
+        final total = _zeroByCurrency();
+        for (final t in filtered) {
+          final c = AppCurrency.fromCode(t['currency'] as String?);
+          total[c] = (total[c] ?? 0) + (t['amount'] as num).toDouble();
+        }
         return {'Total paid': total};
       case 'Advances':
-        double given = 0, deducted = 0;
+        final given = _zeroByCurrency();
+        final deducted = _zeroByCurrency();
         for (final t in filtered) {
+          final c = AppCurrency.fromCode(t['currency'] as String?);
           final amount = (t['amount'] as num).toDouble();
           if (t['type'] == 'advance') {
-            given += amount;
+            given[c] = (given[c] ?? 0) + amount;
           } else {
-            deducted += amount;
+            deducted[c] = (deducted[c] ?? 0) + amount;
           }
         }
+        final outstanding = {
+          for (final c in AppCurrency.values)
+            c: (given[c] ?? 0) - (deducted[c] ?? 0),
+        };
         return {
           'Given': given,
           'Deducted': deducted,
-          'Outstanding': given - deducted,
+          'Outstanding': outstanding,
         };
       case 'Loans':
-        double lent = 0, repaid = 0;
+        final lent = _zeroByCurrency();
+        final repaid = _zeroByCurrency();
         for (final t in filtered) {
+          final c = AppCurrency.fromCode(t['currency'] as String?);
           final amount = (t['amount'] as num).toDouble();
           if (t['type'] == 'loan') {
-            lent += amount;
+            lent[c] = (lent[c] ?? 0) + amount;
           } else {
-            repaid += amount;
+            repaid[c] = (repaid[c] ?? 0) + amount;
           }
         }
-        return {'Lent': lent, 'Repaid': repaid, 'Outstanding': lent - repaid};
+        final outstanding = {
+          for (final c in AppCurrency.values)
+            c: (lent[c] ?? 0) - (repaid[c] ?? 0),
+        };
+        return {'Lent': lent, 'Repaid': repaid, 'Outstanding': outstanding};
       case 'Expenses':
-        final total = filtered.fold<double>(
-          0,
-          (sum, t) => sum + _expenseAmountFor(t),
-        );
+        final total = _zeroByCurrency();
+        for (final t in filtered) {
+          final c = AppCurrency.fromCode(t['currency'] as String?);
+          total[c] = (total[c] ?? 0) + _expenseAmountFor(t);
+        }
         return {'Total spent': total};
       default:
         return {};
     }
   }
 
-  /// Spend per category, sorted descending, capped to the top 7 with the
-  /// remainder folded into "Other" so the chart stays readable.
-  List<MapEntry<String, double>> get _categoryChartData {
+  /// Spend per category for one currency, sorted descending, capped to
+  /// the top 7 with the remainder folded into "Other" so the chart stays
+  /// readable. A bar chart can't sensibly overlay two currencies on one
+  /// axis, so this renders as one chart card per currency that actually
+  /// has data - see the build method.
+  List<MapEntry<String, double>> _categoryChartData(AppCurrency currency) {
     final totals = <String, double>{};
     for (final t in _filtered) {
+      if (AppCurrency.fromCode(t['currency'] as String?) != currency) {
+        continue;
+      }
       for (final item in _itemsOf(t)) {
         final category = item['category'] as String? ?? '';
         if (category.isEmpty) continue;
@@ -273,11 +297,14 @@ class _ReportScreenState extends State<ReportScreen> {
     return invoices;
   }
 
-  /// Spend per month, chronological, capped to the most recent 6 months
-  /// present in the filtered data.
-  List<MapEntry<String, double>> get _monthlyChartData {
+  /// Spend per month for one currency, chronological, capped to the most
+  /// recent 6 months present in the filtered data.
+  List<MapEntry<String, double>> _monthlyChartData(AppCurrency currency) {
     final totals = <DateTime, double>{};
     for (final t in _filtered) {
+      if (AppCurrency.fromCode(t['currency'] as String?) != currency) {
+        continue;
+      }
       final date = DateTime.parse(t['transaction_date'] as String);
       final key = DateTime(date.year, date.month);
       totals[key] = (totals[key] ?? 0) + _expenseAmountFor(t);
@@ -452,7 +479,7 @@ class _ReportScreenState extends State<ReportScreen> {
     );
   }
 
-  Widget _barChart(List<MapEntry<String, double>> data) {
+  Widget _barChart(List<MapEntry<String, double>> data, AppCurrency currency) {
     if (data.isEmpty) {
       return Center(
         child: Text(
@@ -470,7 +497,7 @@ class _ReportScreenState extends State<ReportScreen> {
         // text width, so on a category axis with several long names they
         // overlap their neighbors instead of wrapping or truncating.
         final slotWidth = constraints.maxWidth / data.length;
-        return _buildBarChart(data, maxValue, slotWidth);
+        return _buildBarChart(data, maxValue, slotWidth, currency);
       },
     );
   }
@@ -479,6 +506,7 @@ class _ReportScreenState extends State<ReportScreen> {
     List<MapEntry<String, double>> data,
     double maxValue,
     double slotWidth,
+    AppCurrency currency,
   ) {
     return BarChart(
       BarChartData(
@@ -500,7 +528,7 @@ class _ReportScreenState extends State<ReportScreen> {
             getTooltipColor: (_) => AppColors.ink,
             getTooltipItem: (group, groupIndex, rod, rodIndex) =>
                 BarTooltipItem(
-                  formatMoney(rod.toY, _selectedCurrency),
+                  formatMoney(rod.toY, currency),
                   const TextStyle(
                     color: Colors.white,
                     fontSize: 12,
@@ -641,19 +669,6 @@ class _ReportScreenState extends State<ReportScreen> {
                 ),
                 const SizedBox(height: 12),
 
-                // Currency toggle - a bar chart can't sensibly overlay two
-                // currencies on one axis, so Reports always views one
-                // currency at a time (this narrows the summary cards and
-                // both charts).
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  child: CurrencyToggle(
-                    value: _selectedCurrency,
-                    onChanged: (value) =>
-                        setState(() => _selectedCurrency = value),
-                  ),
-                ),
-
                 // Filters
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
@@ -757,53 +772,61 @@ class _ReportScreenState extends State<ReportScreen> {
                   ),
                 ),
 
-                // Summary cards
+                // Summary cards - two per metric, one per currency, since
+                // there's no toggle anymore to pick just one (see
+                // claude.md's "Currencies": never blend USD and SLSH).
                 SizedBox(
                   height: 82,
                   child: ListView(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    children: summary.entries.map((e) {
-                      // "Outstanding" is the headline number — give it the
-                      // account's accent; supporting figures stay neutral.
+                    children: summary.entries.expand((e) {
+                      // "Outstanding" is the headline number — give it
+                      // the account's accent; supporting figures stay
+                      // neutral.
                       final isHeadline =
                           e.key == 'Outstanding' || e.key.startsWith('Total');
                       final color = isHeadline
                           ? _accountColor
                           : AppColors.inkSecondary;
-                      return Container(
-                        width: 138,
-                        margin: const EdgeInsets.only(right: 10),
-                        padding: const EdgeInsets.all(12),
-                        decoration: isHeadline
-                            ? AppStyles.accentCard(_accountColor)
-                            : AppStyles.card,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              e.key,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.inkSecondary,
+                      return AppCurrency.values.map((currency) {
+                        final value = e.value[currency] ?? 0;
+                        return Container(
+                          width: 138,
+                          margin: const EdgeInsets.only(right: 10),
+                          padding: const EdgeInsets.all(12),
+                          decoration: isHeadline
+                              ? AppStyles.accentCard(_accountColor)
+                              : AppStyles.card,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                '${e.key} (${currency.code})',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.inkSecondary,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                            ),
-                            const SizedBox(height: 7),
-                            Text(
-                              formatMoney(e.value, _selectedCurrency),
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: -0.3,
-                                color: color,
+                              const SizedBox(height: 7),
+                              Text(
+                                formatMoney(value, currency),
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.3,
+                                  color: color,
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      );
+                            ],
+                          ),
+                        );
+                      });
                     }).toList(),
                   ),
                 ),
@@ -820,14 +843,27 @@ class _ReportScreenState extends State<ReportScreen> {
                             // categories that happen to share a
                             // multi-invoice transaction with the selected
                             // one, which reads as "why are these here?".
+                            // A bar chart can't sensibly overlay two
+                            // currencies on one axis (see claude.md's
+                            // "Currencies"), so each currency that
+                            // actually has data gets its own chart card.
                             if (_selectedCategoryName == null) ...[
-                              _chartCard(
-                                title: 'Spending by category',
-                                subtitle: 'Top categories in this range',
-                                icon: Icons.pie_chart_outline,
-                                chart: _barChart(_categoryChartData),
-                              ),
-                              const SizedBox(height: 12),
+                              for (final currency in AppCurrency.values)
+                                if (_categoryChartData(
+                                  currency,
+                                ).isNotEmpty) ...[
+                                  _chartCard(
+                                    title:
+                                        'Spending by category (${currency.code})',
+                                    subtitle: 'Top categories in this range',
+                                    icon: Icons.pie_chart_outline,
+                                    chart: _barChart(
+                                      _categoryChartData(currency),
+                                      currency,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                ],
                             ] else ...[
                               SizedBox(
                                 width: double.infinity,
@@ -848,14 +884,21 @@ class _ReportScreenState extends State<ReportScreen> {
                               ),
                               const SizedBox(height: 12),
                             ],
-                            _chartCard(
-                              title: 'Spending by month',
-                              subtitle: _selectedCategoryName == null
-                                  ? 'Last 6 months with activity'
-                                  : '$_selectedCategoryName, last 6 months with activity',
-                              icon: Icons.show_chart,
-                              chart: _barChart(_monthlyChartData),
-                            ),
+                            for (final currency in AppCurrency.values)
+                              if (_monthlyChartData(currency).isNotEmpty) ...[
+                                _chartCard(
+                                  title: 'Spending by month (${currency.code})',
+                                  subtitle: _selectedCategoryName == null
+                                      ? 'Last 6 months with activity'
+                                      : '$_selectedCategoryName, last 6 months with activity',
+                                  icon: Icons.show_chart,
+                                  chart: _barChart(
+                                    _monthlyChartData(currency),
+                                    currency,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                              ],
                           ],
                         )
                       : filtered.isEmpty
@@ -874,6 +917,9 @@ class _ReportScreenState extends State<ReportScreen> {
                           itemBuilder: (context, index) {
                             final t = filtered[index];
                             final type = t['type'] as String;
+                            final rowCurrency = AppCurrency.fromCode(
+                              t['currency'] as String?,
+                            );
                             final amount = _selectedAccount == 'Expenses'
                                 ? _expenseAmountFor(t)
                                 : (t['amount'] as num).toDouble();
@@ -927,8 +973,8 @@ class _ReportScreenState extends State<ReportScreen> {
                                   ),
                                   Text(
                                     isNeutral
-                                        ? formatMoney(amount, _selectedCurrency)
-                                        : '${isIn ? '+' : '-'}${formatMoney(amount, _selectedCurrency)}',
+                                        ? formatMoney(amount, rowCurrency)
+                                        : '${isIn ? '+' : '-'}${formatMoney(amount, rowCurrency)}',
                                     style: TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w700,

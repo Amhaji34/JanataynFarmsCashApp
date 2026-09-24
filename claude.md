@@ -1177,10 +1177,21 @@ lib/
 │   │                                 filter (staff for Payroll/Advances,
 │   │                                 partner for Loans, category for
 │   │                                 Expenses) plus a shared date-range
-│   │                                 filter and summary total cards.
-│   │                                 Payroll/
+│   │                                 filter. No currency toggle - unlike
+│   │                                 most of the app, this screen never
+│   │                                 lets you narrow to one currency;
+│   │                                 every summary figure is a
+│   │                                 `Map<AppCurrency, double>` and the
+│   │                                 summary card row renders **two**
+│   │                                 cards per metric (e.g. "Total spent
+│   │                                 (USD)" / "Total spent (SLSH)"),
+│   │                                 side by side, always both - never
+│   │                                 blended into one number (see
+│   │                                 "Currencies" above). Payroll/
 │   │                                 Advances/Loans show a filtered
-│   │                                 transaction list; Expenses instead
+│   │                                 transaction list (each row using
+│   │                                 its own transaction's currency, not
+│   │                                 a page-wide one); Expenses instead
 │   │                                 shows "Spending by category" (spend
 │   │                                 by category, capped to top 7 +
 │   │                                 "Other" — hidden once a single
@@ -1196,18 +1207,34 @@ lib/
 │   │                                 expense red) since it's a magnitude
 │   │                                 comparison, not identity - see the
 │   │                                 dataviz skill's form-choice
-│   │                                 guidance before changing this.
-│   │                                 Category-axis labels are boxed to
-│   │                                 their own bar's slot width (via
-│   │                                 `LayoutBuilder`) and wrap to 2 lines
-│   │                                 with ellipsis - without this,
+│   │                                 guidance before changing this. A
+│   │                                 bar chart can't sensibly overlay
+│   │                                 two currencies on one axis, so
+│   │                                 without a toggle to pick one,
+│   │                                 `_categoryChartData(currency)`/
+│   │                                 `_monthlyChartData(currency)` are
+│   │                                 each parameterized by currency and
+│   │                                 the screen renders one chart card
+│   │                                 per currency that actually has
+│   │                                 data in range (e.g. "Spending by
+│   │                                 category (USD)" and "Spending by
+│   │                                 category (SLSH)" stacked, or just
+│   │                                 one if only one currency has
+│   │                                 activity). Category-axis labels are
+│   │                                 boxed to their own bar's slot width
+│   │                                 (via `LayoutBuilder`) and wrap to 2
+│   │                                 lines with ellipsis - without this,
 │   │                                 fl_chart lays out each title at its
 │   │                                 natural unbounded width and several
 │   │                                 long category names overlap. Once a
 │   │                                 single category is selected, a
 │   │                                 "View N invoices" button opens
-│   │                                 category_invoices_screen.dart.
-│   │                                 `_expenseAmountFor(t)` is the
+│   │                                 category_invoices_screen.dart with
+│   │                                 every matching invoice regardless
+│   │                                 of currency (the list itself shows
+│   │                                 each invoice's own currency inline,
+│   │                                 same as everywhere else in the
+│   │                                 app). `_expenseAmountFor(t)` is the
 │   │                                 shared helper behind the summary
 │   │                                 total, the monthly chart, and the
 │   │                                 invoices list: when a category
