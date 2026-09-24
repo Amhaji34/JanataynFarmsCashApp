@@ -89,7 +89,10 @@ class _ReportScreenState extends State<ReportScreen> {
           .order('name');
       final fundAdds = await supabase
           .from('account_transactions')
-          .select('amount, currency, transaction_date, accounts(name)')
+          .select(
+            'amount, currency, transaction_date, '
+            'accounts!account_transactions_account_id_fkey(name)',
+          )
           .eq('type', 'fund_add');
 
       setState(() {
